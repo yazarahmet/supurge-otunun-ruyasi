@@ -10,38 +10,28 @@ if (!apiKey) {
 const ai = new GoogleGenAI({ apiKey: apiKey || "DUMMY_KEY_FOR_BUILD" });
 
 // Yardımcı Fonksiyon: JSON Ayıklayıcı
-// Model bazen markdown, bazen düz metin, bazen de bozuk JSON dönebilir.
-// Bu fonksiyon metnin içinden geçerli JSON objesini bulmaya çalışır.
 function extractJSON(text: string): any {
   try {
-    // 1. Temizle
     let cleanText = text.replace(/```json|```/g, '').trim();
-    
-    // 2. Doğrudan parse dene
     return JSON.parse(cleanText);
   } catch (e) {
-    // 3. Eğer başarısız olursa, süslü parantezlerin arasını bulmaya çalış
     const firstOpen = text.indexOf('{');
     const lastClose = text.lastIndexOf('}');
-    
     if (firstOpen !== -1 && lastClose !== -1) {
       const candidate = text.substring(firstOpen, lastClose + 1);
       try {
         return JSON.parse(candidate);
-      } catch (e2) {
-        // Yine başarısız
-      }
+      } catch (e2) {}
     }
     throw new Error("JSON formatı algılanamadı.");
   }
 }
 
 // Yardımcı: Timeout'lu Fetch
-// API çağrısı sonsuza kadar asılı kalmasın diye wrapper.
 async function withTimeout<T>(promise: Promise<T>, ms: number = 60000): Promise<T> {
     let timer: any;
     const timeoutPromise = new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("İstek zaman aşımına uğradı (Timeout). İnternet bağlantınızı kontrol edin.")), ms);
+        timer = setTimeout(() => reject(new Error("İstek zaman aşımına uğradı.")), ms);
     });
     try {
         const result = await Promise.race([promise, timeoutPromise]);
@@ -53,7 +43,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number = 60000): Promise<
     }
 }
 
-// 1. Transcribe Audio (Speech to Text)
+// 1. Transcribe Audio
 export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
   if (!apiKey) throw new Error("API Anahtarı eksik.");
 
@@ -61,7 +51,7 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
     const reader = new FileReader();
     reader.onloadend = () => {
       const res = reader.result as string;
-      const base64 = res.split(',')[1]; // Data URL header'ını kaldır
+      const base64 = res.split(',')[1];
       resolve(base64);
     };
     reader.onerror = reject;
@@ -75,15 +65,8 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
         model: 'gemini-2.5-flash',
         contents: {
         parts: [
-            {
-            inlineData: {
-                mimeType: mimeType,
-                data: base64Audio
-            }
-            },
-            {
-            text: "Lütfen bu ses dosyasını tam olarak metne dök. Sadece söylenenleri yaz, yorum yapma."
-            }
+            { inlineData: { mimeType: mimeType, data: base64Audio } },
+            { text: "Lütfen bu ses dosyasını tam olarak metne dök. Sadece söylenenleri yaz." }
         ]
         }
     }));
@@ -94,7 +77,7 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
   }
 };
 
-// 2. Analyze Dream (Text Interpretation)
+// 2. Analyze Dream
 export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis> => {
   if (!apiKey) throw new Error("API Anahtarı eksik.");
 
@@ -104,14 +87,13 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
         contents: `Aşağıdaki rüyayı detaylı bir şekilde tabir et. 
         Rüya: "${dreamText}"
         
-        Yanıtı MÜMKÜNSE şu JSON formatında ver (değilse düz metin olarak yorumla):
+        Yanıtı MÜMKÜNSE şu JSON formatında ver:
         {
-        "sentiment": "positive" veya "negative" (genel hava),
+        "sentiment": "positive" veya "negative" veya "neutral",
         "title": "Rüyaya kısa başlık",
         "interpretation": "Detaylı yorum"
         }`,
         config: {
-        // responseMimeType: "application/json", // Model bazen zorlanıyor, serbest bırakıyoruz.
         responseSchema: {
             type: Type.OBJECT,
             properties: {
@@ -124,31 +106,21 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
     }));
 
     const rawText = response.text || "";
-    
     try {
-        // JSON denemesi
         const data = extractJSON(rawText);
-        // Eksik alan varsa tamamla
         if (!data.interpretation) data.interpretation = rawText;
         if (!data.title) data.title = "Rüya Tabiri";
         if (!data.sentiment) data.sentiment = "neutral";
         return data as DreamAnalysis;
-
     } catch (jsonError) {
-        // JSON parse edilemediyse "Fallback" modu:
-        // Uygulamanın patlamasını engellemek için ham metni yorum olarak dönüyoruz.
-        console.warn("JSON parse hatası, raw text kullanılıyor:", jsonError);
-        
         return {
             sentiment: 'neutral',
             title: 'Rüya Yorumu',
-            interpretation: rawText.replace(/```json|```/g, '').trim() // Markdown temizle
+            interpretation: rawText.replace(/```json|```/g, '').trim()
         };
     }
-
   } catch (error: any) {
-    console.error("Analysis Error:", error);
-    throw new Error(`Rüya tabir edilirken hata: ${error.message || "Bilinmeyen hata"}`);
+    throw new Error(`Rüya tabir edilirken hata: ${error.message}`);
   }
 };
 
@@ -156,43 +128,34 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 export const generateDreamImage = async (dreamText: string, sentiment: string): Promise<string> => {
   if (!apiKey) return "";
 
-  // PROMPT OPTİMİZASYONU:
-  // Rüya metni çok uzun olduğunda görsel modeli (Imagen/Gemini Image) odaklanamayabilir 
-  // veya güvenlik filtrelerine takılabilir. Metni kısaltarak şansımızı artırıyoruz.
-  const safeText = dreamText.length > 350 ? dreamText.substring(0, 350) + "..." : dreamText;
+  // FIX: Vercel ortamında timeout ve hata almamak için prompt'u çok daha kısa tutuyoruz.
+  // 150 karaktere indirip sadece anahtar kelimeleri almaya çalışıyoruz.
+  const safeText = dreamText.length > 150 ? dreamText.substring(0, 150) + "..." : dreamText;
 
-  const moodPrompt = sentiment === 'positive' 
-    ? "ethereal lighting, divine atmosphere, soft pastel colors, dreamlike, masterpiece, 8k resolution" 
-    : "mysterious atmosphere, dark fog, gothic style, deep shadows, surreal, masterpiece, 8k resolution";
-
-  // Prompt'u daha sanatsal bir çerçeveye oturtuyoruz
-  const prompt = `Surrealist concept art depicting this dream scene: ${safeText}. Art style: ${moodPrompt}`;
+  const mood = sentiment === 'positive' ? "mystical, bright, ethereal" : "dark, mysterious, surreal";
+  
+  // Basit prompt yapısı
+  const prompt = `Dream scene concept art: ${safeText}. Style: ${mood}, high quality.`;
 
   try {
     const response = await withTimeout(ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [{ text: prompt }]
-      },
+      contents: { parts: [{ text: prompt }] },
       config: {
-         // @ts-ignore - imageConfig tipi bazen eksik olabilir ama API destekler
-         imageConfig: {
-            aspectRatio: "16:9" // UI ile uyumlu olması için
-         }
+         // @ts-ignore
+         imageConfig: { aspectRatio: "16:9" }
       }
-    }), 50000); // Görsel için 50sn timeout (Vercel ortamı için biraz daha esnek)
+    }), 45000); // 45sn timeout
 
-    // Yanıtı tara
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
         return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
-    console.warn("Görsel oluşturma yanıtı boş döndü.");
     return "";
   } catch (e) {
-    console.error("Image generation failed:", e);
-    return ""; // Sessizce başarısız ol, akışı bozma
+    console.warn("Image generation skipped/failed:", e);
+    return "";
   }
 };
 
@@ -200,8 +163,9 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
 export const generateDreamSpeech = async (text: string): Promise<{ audioData: Float32Array, sampleRate: number }> => {
   if (!apiKey) throw new Error("API Anahtarı eksik.");
 
-  // Metin çok uzunsa kırp (TTS limitlerine takılmamak için)
-  const safeText = text.length > 500 ? text.substring(0, 500) + "..." : text;
+  // FIX: Karakter limitini 500'den 4000'e çıkardık.
+  // Gemini TTS genellikle 4096 token civarına kadar destekler.
+  const safeText = text.length > 4000 ? text.substring(0, 4000) + "..." : text;
 
   const response = await withTimeout(ai.models.generateContent({
     model: "gemini-2.5-flash-preview-tts",
@@ -253,17 +217,13 @@ export const askKeywordQuestion = async (
   try {
     const chat = ai.chats.create({
       model: 'gemini-2.5-flash',
-      config: {
-        systemInstruction: systemInstruction
-      },
+      config: { systemInstruction },
       history: history as any
     });
 
     const response = await withTimeout(chat.sendMessage({ message: question }));
-    return response.text || "Şu an ruhlar sessizliğini koruyor...";
-
+    return response.text || "Ruhlar sessiz...";
   } catch (e) {
-      console.error("Chat error:", e);
-      return "Bir hata oluştu, lütfen daha sonra tekrar sor.";
+      return "Bir hata oluştu.";
   }
 };
