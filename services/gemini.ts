@@ -9,6 +9,14 @@ if (!apiKey) {
 
 const ai = new GoogleGenAI({ apiKey: apiKey || "DUMMY_KEY_FOR_BUILD" });
 
+// Güvenlik Ayarları: İçerik filtrelerine takılmamak için
+const SAFETY_SETTINGS = [
+  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+];
+
 // Yardımcı Fonksiyon: JSON Ayıklayıcı
 function extractJSON(text: string): any {
   try {
@@ -25,6 +33,16 @@ function extractJSON(text: string): any {
     }
     throw new Error("JSON formatı algılanamadı.");
   }
+}
+
+// Yardımcı: TTS için metni temizle (Markdown vb. kaldır)
+function cleanTextForTTS(text: string): string {
+  return text
+    .replace(/[*_~`]/g, '') // Markdown sembollerini kaldır
+    .replace(/\[.*?\]/g, '') // Linkleri kaldır
+    .replace(/^\s*[-+*]\s+/gm, '') // Liste işaretlerini kaldır
+    .replace(/#{1,6}\s+/g, '') // Başlık işaretlerini kaldır
+    .trim();
 }
 
 // Yardımcı: Timeout'lu Fetch
@@ -101,7 +119,8 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
             title: { type: Type.STRING },
             interpretation: { type: Type.STRING }
             }
-        }
+        },
+        safetySettings: SAFETY_SETTINGS
         }
     }));
 
@@ -128,40 +147,42 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 export const generateDreamImage = async (dreamText: string, sentiment: string): Promise<string> => {
   if (!apiKey) return "";
 
-  // FIX: Vercel ortamında "Bad Request" hatalarını önlemek için prompt'u temizle ve basitleştir.
   const safeText = dreamText.length > 100 ? dreamText.substring(0, 100) : dreamText;
-  const mood = sentiment === 'positive' ? "mystical and bright" : "dark and surreal";
-  
-  // Prompt çok basit tutuluyor.
-  const prompt = `Surreal dream art: ${safeText}. ${mood}. High quality.`;
+  const mood = sentiment === 'positive' ? "mystical bright" : "dark surreal";
+  const prompt = `Surreal art: ${safeText}. ${mood}.`;
 
-  try {
-    const response = await withTimeout(ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: prompt }] },
-      // FIX: aspectRatio config'i bazı ortamlarda anında hata verdirebiliyor, kaldırdık.
-      // Default kare (1:1) olarak gelsin, en güvenli yöntem budur.
-    }), 40000);
+  // Retry logic: 1 kez tekrar dene
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+        const response = await withTimeout(ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                safetySettings: SAFETY_SETTINGS // Güvenlik filtresi takılmasını önle
+            }
+        }), 45000);
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
-      }
+        for (const part of response.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData) {
+                return `data:image/png;base64,${part.inlineData.data}`;
+            }
+        }
+    } catch (e: any) {
+        console.error(`Image gen attempt ${attempt + 1} failed:`, e);
+        if (attempt === 1) return ""; // Son deneme de başarısızsa boş dön
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1sn bekle tekrar dene
     }
-    return "";
-  } catch (e: any) {
-    // Hata detayını konsola basalım ki Vercel loglarında görünsün.
-    console.error("Image generation failed details:", e);
-    return "";
   }
+  return "";
 };
 
 // 4. Text to Speech
 export const generateDreamSpeech = async (text: string): Promise<{ audioData: Float32Array, sampleRate: number }> => {
   if (!apiKey) throw new Error("API Anahtarı eksik.");
 
-  // Karakter limiti 4000.
-  const safeText = text.length > 4000 ? text.substring(0, 4000) : text;
+  // Metni temizle ve kısalt
+  const cleanText = cleanTextForTTS(text);
+  const safeText = cleanText.length > 4000 ? cleanText.substring(0, 4000) : cleanText;
 
   try {
     const response = await withTimeout(ai.models.generateContent({
@@ -171,14 +192,15 @@ export const generateDreamSpeech = async (text: string): Promise<{ audioData: Fl
         responseModalities: [Modality.AUDIO],
         speechConfig: {
             voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' },
+            prebuiltVoiceConfig: { voiceName: 'Kore' }, // Kore veya Puck deneyebiliriz
             },
         },
+        safetySettings: SAFETY_SETTINGS
         },
-    }));
+    }), 60000); // TTS biraz daha uzun sürebilir
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!base64Audio) throw new Error("API'den ses verisi dönmedi.");
+    if (!base64Audio) throw new Error("API'den ses verisi dönmedi (Boş yanıt).");
 
     const binaryString = atob(base64Audio);
     const len = binaryString.length;
@@ -194,6 +216,9 @@ export const generateDreamSpeech = async (text: string): Promise<{ audioData: Fl
     for (let i = 0; i < pcm16.length; i++) {
         float32[i] = pcm16[i] / 32768.0;
     }
+
+    // Eğer ses verisi çok kısaysa (örn: hata sesi veya boşluk) hata fırlat
+    if (float32.length < 100) throw new Error("Ses verisi çok kısa/boş.");
 
     return {
         audioData: float32,
@@ -218,7 +243,7 @@ export const askKeywordQuestion = async (
   try {
     const chat = ai.chats.create({
       model: 'gemini-2.5-flash',
-      config: { systemInstruction },
+      config: { systemInstruction, safetySettings: SAFETY_SETTINGS },
       history: history as any
     });
 
