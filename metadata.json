@@ -1,0 +1,7 @@
+{
+  "name": "Süpürge Otu'nun Rüyası",
+  "description": "Yapay zeka destekli rüya tabiri, görselleştirme ve analiz uygulaması.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
