@@ -106,12 +106,11 @@ const App: React.FC = () => {
       // 2. Generate Image
       setStatus(AppStatus.GENERATING_IMAGE);
       try {
-        // Isolate Image Generation to prevent entire flow failure on 403 (Permissions)
         const img = await generateDreamImage(dreamText, analysisResult.sentiment);
         setImageUrl(img);
       } catch (imgError) {
-        console.warn("Görsel oluşturma hatası (izinler veya erişim):", imgError);
-        // Fallback: Image stays null, UI shows placeholder or handles null gracefully
+        console.warn("Görsel oluşturma hatası (sessizce geçildi):", imgError);
+        // Image remains null, no alert needed
       }
 
       setStatus(AppStatus.COMPLETE);
@@ -121,8 +120,7 @@ const App: React.FC = () => {
 
     } catch (error: any) {
       console.error(error);
-      setStatus(AppStatus.ERROR);
-      // Show specific error message from the backend/service
+      setStatus(AppStatus.IDLE); // Reset to IDLE so user can try again
       alert("Hata: " + (error.message || "Bir hata oluştu. Lütfen tekrar deneyiniz."));
     }
   };
@@ -272,7 +270,7 @@ const App: React.FC = () => {
                 <div className="w-full h-full bg-black/20 flex flex-col items-center justify-center backdrop-blur-sm">
                    <ImageIcon className="w-16 h-16 opacity-50 animate-bounce" />
                    <p className="mt-4 font-serif italic">
-                     {status === AppStatus.GENERATING_IMAGE ? "Rüyanız görselleştiriliyor..." : "Görsel oluşturulamadı."}
+                     {status === AppStatus.GENERATING_IMAGE ? "Rüyanız görselleştiriliyor..." : "Görsel oluşturulamadı (İsteğe bağlı)."}
                    </p>
                 </div>
               )}
