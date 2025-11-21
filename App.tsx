@@ -228,7 +228,7 @@ const App: React.FC = () => {
 
     } catch (e) {
       console.error("Ses oynatma/oluşturma hatası (Nihai):", e);
-      alert("Ses oluşturulamadı. İçerik güvenlik politikasına takılmış olabilir.");
+      alert("Ses oluşturulamadı: " + (e instanceof Error ? e.message : "Bilinmeyen hata"));
       setIsPlayingAudio(false);
     } finally {
         setIsLoadingAudio(false);
