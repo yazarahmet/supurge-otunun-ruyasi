@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AppStatus, DreamAnalysis, ChatMessage } from './types';
 import { transcribeAudio, analyzeDreamText, generateDreamImage, generateDreamSpeech, askKeywordQuestion } from './services/gemini';
-import { MicIcon, StopIcon, PlayIcon, SendIcon, SparklesIcon, ImageIcon } from './components/Icons';
+import { MicIcon, StopIcon, PlayIcon, PauseIcon, SendIcon, SparklesIcon, ImageIcon } from './components/Icons';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
@@ -11,13 +11,16 @@ const App: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState('');
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
 
   // Audio Recording Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  // Playback Audio Context Ref
+  // Playback Audio Refs
   const playbackAudioCtxRef = useRef<AudioContext | null>(null);
+  const activeAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const audioCacheRef = useRef<{ audioData: Float32Array, sampleRate: number } | null>(null);
 
   // Scroll refs
   const resultRef = useRef<HTMLDivElement>(null);
@@ -97,6 +100,13 @@ const App: React.FC = () => {
     setAnalysis(null);
     setImageUrl(null);
     setChatMessages([]);
+    // Yeni rüya analiz edildiğinde eski ses cache'ini ve player'ı temizle
+    audioCacheRef.current = null;
+    if (activeAudioSourceRef.current) {
+        try { activeAudioSourceRef.current.stop(); } catch(e) {}
+        activeAudioSourceRef.current = null;
+    }
+    setIsPlayingAudio(false);
 
     try {
       // 1. Analyze Text
@@ -125,39 +135,73 @@ const App: React.FC = () => {
     }
   };
 
-  const playInterpretation = async () => {
+  const toggleAudioPlayback = async () => {
     if (!analysis) return;
-    if (isPlayingAudio) return;
 
-    setIsPlayingAudio(true);
+    // DURDURMA MANTIĞI
+    if (isPlayingAudio) {
+        if (activeAudioSourceRef.current) {
+            try {
+                activeAudioSourceRef.current.stop();
+            } catch (e) {
+                console.warn("Ses durdurulurken hata:", e);
+            }
+            activeAudioSourceRef.current = null;
+        }
+        setIsPlayingAudio(false);
+        return;
+    }
+
+    // BAŞLATMA MANTIĞI
+    setIsLoadingAudio(true);
     try {
-      // Get raw audio data and sample rate
-      const { audioData, sampleRate } = await generateDreamSpeech(analysis.interpretation);
+      let audioData = audioCacheRef.current?.audioData;
+      let sampleRate = audioCacheRef.current?.sampleRate;
+
+      // Cache boşsa API'den çek
+      if (!audioData || !sampleRate) {
+          const result = await generateDreamSpeech(analysis.interpretation);
+          audioData = result.audioData;
+          sampleRate = result.sampleRate;
+          // Cache'e kaydet (böylece durdurup tekrar başlatırsa API harcamaz)
+          audioCacheRef.current = result;
+      }
       
-      // Reuse context to prevent running out of hardware contexts
+      // Reuse context
       if (!playbackAudioCtxRef.current || playbackAudioCtxRef.current.state === 'closed') {
          playbackAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
       const ctx = playbackAudioCtxRef.current;
       
-      // Resume if suspended (browser autoplay policy)
+      // Resume if suspended
       if (ctx.state === 'suspended') {
         await ctx.resume();
       }
 
-      // Create buffer from raw data
+      // Create buffer
       const buffer = ctx.createBuffer(1, audioData.length, sampleRate);
       buffer.getChannelData(0).set(audioData);
 
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(ctx.destination);
-      source.onended = () => setIsPlayingAudio(false);
+      
+      // Source'u ref'e kaydet (durdurabilmek için)
+      activeAudioSourceRef.current = source;
+      
+      source.onended = () => {
+          setIsPlayingAudio(false);
+          activeAudioSourceRef.current = null;
+      };
+      
       source.start(0);
+      setIsPlayingAudio(true);
     } catch (e) {
       console.error("Ses oynatma hatası:", e);
-      setIsPlayingAudio(false);
       alert("Ses çalınamadı. Lütfen tekrar deneyin.");
+      setIsPlayingAudio(false);
+    } finally {
+        setIsLoadingAudio(false);
     }
   };
 
@@ -287,12 +331,18 @@ const App: React.FC = () => {
                 <div className="flex justify-between items-start mb-4">
                   <h3 className="text-xl font-serif font-bold uppercase tracking-widest opacity-80">Tabir</h3>
                   <button 
-                    onClick={playInterpretation}
-                    disabled={isPlayingAudio}
-                    className={`p-3 rounded-full hover:bg-white/20 transition-colors ${isPlayingAudio ? 'text-green-400 animate-pulse' : ''}`}
-                    title="Sesli Dinle"
+                    onClick={toggleAudioPlayback}
+                    disabled={isLoadingAudio}
+                    className={`p-3 rounded-full hover:bg-white/20 transition-colors ${isPlayingAudio ? 'text-red-400 ring-2 ring-red-400/30' : (isLoadingAudio ? 'opacity-50' : 'text-green-400')}`}
+                    title={isPlayingAudio ? "Durdur" : "Sesli Dinle"}
                   >
-                    <PlayIcon className="w-8 h-8" />
+                    {isLoadingAudio ? (
+                        <SparklesIcon className="w-8 h-8 animate-spin" />
+                    ) : isPlayingAudio ? (
+                        <PauseIcon className="w-8 h-8" />
+                    ) : (
+                        <PlayIcon className="w-8 h-8" />
+                    )}
                   </button>
                 </div>
                 <p className="text-lg leading-relaxed font-serif text-justify whitespace-pre-wrap">
