@@ -1,20 +1,15 @@
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { GoogleGenAI, Type, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { DreamAnalysis } from "../types";
 
-// API Key kontrolü
-const apiKey = process.env.API_KEY;
-if (!apiKey) {
-  console.warn("UYARI: API Key bulunamadı! Vercel Environment Variables ayarlarını kontrol edin.");
-}
-
-const ai = new GoogleGenAI({ apiKey: apiKey || "DUMMY_KEY_FOR_BUILD" });
+// API Key initialization per guidelines
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Güvenlik Ayarları: İçerik filtrelerine takılmamak için
 const SAFETY_SETTINGS = [
-  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
 ];
 
 // Yardımcı Fonksiyon: JSON Ayıklayıcı
@@ -63,8 +58,6 @@ async function withTimeout<T>(promise: Promise<T>, ms: number = 60000): Promise<
 
 // 1. Transcribe Audio
 export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
-  if (!apiKey) throw new Error("API Anahtarı eksik.");
-
   const base64Audio = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -97,8 +90,6 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
 
 // 2. Analyze Dream
 export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis> => {
-  if (!apiKey) throw new Error("API Anahtarı eksik.");
-
   try {
     const response = await withTimeout(ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -145,8 +136,6 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 
 // 3. Generate Image
 export const generateDreamImage = async (dreamText: string, sentiment: string): Promise<string> => {
-  if (!apiKey) return "";
-
   const safeText = dreamText.length > 100 ? dreamText.substring(0, 100) : dreamText;
   const mood = sentiment === 'positive' ? "mystical bright" : "dark surreal";
   const prompt = `Surreal art: ${safeText}. ${mood}.`;
@@ -178,8 +167,6 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
 
 // 4. Text to Speech
 export const generateDreamSpeech = async (text: string): Promise<{ audioData: Float32Array, sampleRate: number }> => {
-  if (!apiKey) throw new Error("API Anahtarı eksik.");
-
   // Metni temizle ve kısalt
   const cleanText = cleanTextForTTS(text);
   const safeText = cleanText.length > 4000 ? cleanText.substring(0, 4000) : cleanText;
