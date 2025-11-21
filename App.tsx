@@ -21,7 +21,7 @@ const App: React.FC = () => {
   const playbackAudioCtxRef = useRef<AudioContext | null>(null);
   const activeAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const audioCacheRef = useRef<{ audioData: Float32Array, sampleRate: number } | null>(null);
-  // FIX: Arka planda devam eden ses isteğini tutmak için Promise ref
+  // Arka planda devam eden ses isteğini tutmak için Promise ref
   const audioPromiseRef = useRef<Promise<{ audioData: Float32Array, sampleRate: number }> | null>(null);
 
   // Scroll refs
@@ -117,7 +117,6 @@ const App: React.FC = () => {
       setAnalysis(analysisResult);
 
       // FIX: Tabir biter bitmez arka planda sesi hazırlamaya başla (Pre-fetch)
-      // Kullanıcı Play'e basana kadar bu promise arka planda çalışır.
       if (analysisResult.interpretation) {
          console.log("Arka planda ses hazırlanıyor...");
          audioPromiseRef.current = generateDreamSpeech(analysisResult.interpretation)
@@ -128,6 +127,7 @@ const App: React.FC = () => {
            })
            .catch(err => {
                console.warn("Arka plan ses oluşturma hatası:", err);
+               // Promise'i null yapmıyoruz, hatayı içinde tutsun, aşağıda catch ile yakalarız.
                throw err;
            });
       }
@@ -170,23 +170,33 @@ const App: React.FC = () => {
       let audioData;
       let sampleRate;
 
-      // 1. Önce Cache'e bak
+      // 1. Cache'de var mı?
       if (audioCacheRef.current) {
           audioData = audioCacheRef.current.audioData;
           sampleRate = audioCacheRef.current.sampleRate;
-      } 
-      // 2. Cache yoksa, arka planda devam eden işleme (Promise) bak
-      else if (audioPromiseRef.current) {
-          const result = await audioPromiseRef.current;
-          audioData = result.audioData;
-          sampleRate = result.sampleRate;
-      }
-      // 3. Hiçbiri yoksa (fallback), sıfırdan oluştur
-      else {
-          const result = await generateDreamSpeech(analysis.interpretation);
-          audioData = result.audioData;
-          sampleRate = result.sampleRate;
-          audioCacheRef.current = result;
+      } else {
+          // 2. Cache yoksa, ya hazırlanıyor ya da hazırlanması hata verdi.
+          try {
+              if (audioPromiseRef.current) {
+                  // Halihazırda bir istek varsa onu bekle
+                  const result = await audioPromiseRef.current;
+                  audioData = result.audioData;
+                  sampleRate = result.sampleRate;
+                  audioCacheRef.current = result;
+              }
+          } catch (prefetchError) {
+              console.warn("Arka plan ses hazırlığı hatalıydı, yeniden deneniyor...", prefetchError);
+              audioPromiseRef.current = null; // Hatalı promise'i temizle
+          }
+
+          // 3. Eğer yukarıdakiler başarısız olduysa veya hiç başlamadıysa: Sıfırdan oluştur (Fallback)
+          if (!audioData || !sampleRate) {
+              console.log("Ses sıfırdan oluşturuluyor...");
+              const result = await generateDreamSpeech(analysis.interpretation);
+              audioData = result.audioData;
+              sampleRate = result.sampleRate;
+              audioCacheRef.current = result;
+          }
       }
       
       // Audio Context Hazırlığı
@@ -195,6 +205,7 @@ const App: React.FC = () => {
       }
       const ctx = playbackAudioCtxRef.current;
       
+      // Kullanıcı etkileşimiyle Context'i uyandır (Tarayıcı politikaları için kritik)
       if (ctx.state === 'suspended') await ctx.resume();
 
       const buffer = ctx.createBuffer(1, audioData.length, sampleRate);
@@ -215,8 +226,8 @@ const App: React.FC = () => {
       setIsPlayingAudio(true);
 
     } catch (e) {
-      console.error("Ses oynatma hatası:", e);
-      // alert("Ses henüz hazır değil veya bir hata oluştu."); // Kullanıcıyı darlamamak için alert kapalı
+      console.error("Ses oynatma/oluşturma hatası (Nihai):", e);
+      alert("Ses oluşturulamadı. Lütfen tekrar deneyin.");
       setIsPlayingAudio(false);
     } finally {
         setIsLoadingAudio(false);
