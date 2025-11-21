@@ -1,11 +1,19 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { DreamAnalysis } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// API Key kontrolü
+const apiKey = process.env.API_KEY;
+if (!apiKey) {
+  console.error("API Key bulunamadı! Lütfen Vercel Environment Variables ayarlarını kontrol edin.");
+}
+
+const ai = new GoogleGenAI({ apiKey: apiKey || "DUMMY_KEY_FOR_BUILD" }); // Build sırasında hata vermemesi için dummy key, runtime'da gerçek key olmalı.
 
 // 1. Transcribe Audio (Speech to Text)
 // Model: gemini-2.5-flash
 export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
+  if (!apiKey) throw new Error("API Anahtarı eksik. Lütfen Vercel ayarlarından API_KEY ekleyin.");
+
   // Convert Blob to Base64
   const base64Audio = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -20,61 +28,74 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
   // Ensure mimeType is valid or default to audio/webm
   const mimeType = audioBlob.type || 'audio/webm';
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Audio
-          }
-        },
-        {
-          text: "Lütfen bu ses dosyasını tam olarak metne dök. Sadece söylenenleri yaz, başka bir şey ekleme."
+  try {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: {
+        parts: [
+            {
+            inlineData: {
+                mimeType: mimeType,
+                data: base64Audio
+            }
+            },
+            {
+            text: "Lütfen bu ses dosyasını tam olarak metne dök. Sadece söylenenleri yaz, başka bir şey ekleme."
+            }
+        ]
         }
-      ]
-    }
-  });
-
-  return response.text || "";
+    });
+    return response.text || "";
+  } catch (error: any) {
+    console.error("Transcribe Error:", error);
+    throw new Error(`Ses işlenirken hata: ${error.message || error}`);
+  }
 };
 
 // 2. Analyze Dream (Text Interpretation)
 // Model: gemini-3-pro-preview
 export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis> => {
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: `Aşağıdaki rüyayı detaylı bir şekilde tabir et. 
-    Rüya: "${dreamText}"
-    
-    Yanıtı kesinlikle şu JSON formatında ver:
-    {
-      "sentiment": "positive" veya "negative" (rüyayı genel havasına göre sınıflandır),
-      "title": "Rüyaya kısa, mistik bir başlık",
-      "interpretation": "Rüyanın detaylı, edebi ve mistik yorumu."
-    }`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          sentiment: { type: Type.STRING, enum: ["positive", "negative", "neutral"] },
-          title: { type: Type.STRING },
-          interpretation: { type: Type.STRING }
-        }
-      }
-    }
-  });
+  if (!apiKey) throw new Error("API Anahtarı eksik. Lütfen Vercel ayarlarından API_KEY ekleyin.");
 
-  const jsonText = response.text;
-  if (!jsonText) throw new Error("Analiz sonucu boş döndü.");
-  return JSON.parse(jsonText) as DreamAnalysis;
+  try {
+    const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-preview',
+        contents: `Aşağıdaki rüyayı detaylı bir şekilde tabir et. 
+        Rüya: "${dreamText}"
+        
+        Yanıtı kesinlikle şu JSON formatında ver:
+        {
+        "sentiment": "positive" veya "negative" (rüyayı genel havasına göre sınıflandır),
+        "title": "Rüyaya kısa, mistik bir başlık",
+        "interpretation": "Rüyanın detaylı, edebi ve mistik yorumu."
+        }`,
+        config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+            sentiment: { type: Type.STRING, enum: ["positive", "negative", "neutral"] },
+            title: { type: Type.STRING },
+            interpretation: { type: Type.STRING }
+            }
+        }
+        }
+    });
+
+    const jsonText = response.text;
+    if (!jsonText) throw new Error("Analiz sonucu boş döndü.");
+    return JSON.parse(jsonText) as DreamAnalysis;
+  } catch (error: any) {
+    console.error("Analysis Error:", error);
+    throw new Error(`Rüya tabir edilirken hata: ${error.message || error}`);
+  }
 };
 
 // 3. Generate Image
 // Model: gemini-3-pro-image-preview with fallback to gemini-2.5-flash-image
 export const generateDreamImage = async (dreamText: string, sentiment: string): Promise<string> => {
+  if (!apiKey) return ""; // Görsel için sessizce başarısız ol, akışı bozma
+
   const moodPrompt = sentiment === 'positive' 
     ? "bright, ethereal, divine, heavenly light, soft pastel colors, dreamlike, masterpiece, 8k" 
     : "mysterious, dark moody, fog, gothic, deep shadows, intense, dreamlike, masterpiece, 8k";
@@ -125,6 +146,8 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
 // Model: gemini-2.5-flash-preview-tts
 // Returns raw float32 audio data and sample rate
 export const generateDreamSpeech = async (text: string): Promise<{ audioData: Float32Array, sampleRate: number }> => {
+  if (!apiKey) throw new Error("API Anahtarı eksik.");
+
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-preview-tts",
     contents: [{ parts: [{ text: text }] }],
