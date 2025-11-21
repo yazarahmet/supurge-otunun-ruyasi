@@ -93,14 +93,16 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
   try {
     const response = await withTimeout(ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Aşağıdaki rüyayı detaylı bir şekilde tabir et. 
+        contents: `Aşağıdaki rüyayı yorumla. Yorumun KISA, ÖZ ve MİSTİK olsun. 
+        Okuyucuyu sıkmayacak şekilde, LÜTFEN MAKSİMUM 800 KARAKTER kullanarak tabir et.
+        
         Rüya: "${dreamText}"
         
         Yanıtı MÜMKÜNSE şu JSON formatında ver:
         {
         "sentiment": "positive" veya "negative" veya "neutral",
         "title": "Rüyaya kısa başlık",
-        "interpretation": "Detaylı yorum"
+        "interpretation": "Kısa ve öz yorum (max 800 karakter)"
         }`,
         config: {
         responseSchema: {
@@ -169,7 +171,9 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
 export const generateDreamSpeech = async (text: string): Promise<{ audioData: Float32Array, sampleRate: number }> => {
   // Metni temizle ve kısalt
   const cleanText = cleanTextForTTS(text);
-  const safeText = cleanText.length > 4000 ? cleanText.substring(0, 4000) : cleanText;
+  // Timeout'u engellemek için karakter limitini düşürdük (800 karakter).
+  // Uzun metinler modelin yanıt vermesini çok geciktirir.
+  const safeText = cleanText.length > 800 ? cleanText.substring(0, 800) + "..." : cleanText;
 
   try {
     const response = await withTimeout(ai.models.generateContent({
@@ -184,7 +188,7 @@ export const generateDreamSpeech = async (text: string): Promise<{ audioData: Fl
         },
         safetySettings: SAFETY_SETTINGS
         },
-    }), 60000); // TTS biraz daha uzun sürebilir
+    }), 100000); // Timeout süresi artırıldı: 100 saniye
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (!base64Audio) throw new Error("API'den ses verisi dönmedi (Boş yanıt).");
