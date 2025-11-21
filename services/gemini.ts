@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { DreamAnalysis } from "../types";
+import { DreamAnalysis, AudioData } from "../types";
 
 // API Key initialization per guidelines
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -30,7 +30,7 @@ function extractJSON(text: string): any {
   }
 }
 
-// Yardımcı: TTS için metni temizle (Markdown vb. kaldır)
+// Yardımcı: TTS için metni temizle
 function cleanTextForTTS(text: string): string {
   return text
     .replace(/[*_~`]/g, '') // Markdown sembollerini kaldır
@@ -38,6 +38,36 @@ function cleanTextForTTS(text: string): string {
     .replace(/^\s*[-+*]\s+/gm, '') // Liste işaretlerini kaldır
     .replace(/#{1,6}\s+/g, '') // Başlık işaretlerini kaldır
     .trim();
+}
+
+// Yardımcı: Uzun metinleri cümle bütünlüğünü bozmadan parçalara ayırır
+export function splitTextForTTS(text: string, limit: number = 600): string[] {
+    // Metni temizle
+    const clean = cleanTextForTTS(text);
+    // Cümlelere böl (Nokta, ünlem, soru işareti ve ardından boşluk veya satır sonu)
+    // Regex açıklaması: [.!?]+ (noktalama), ["']? (opsiyonel tırnak), (\s|$) (boşluk veya son)
+    const sentences = clean.match(/[^.!?]+[.!?]+["']?|.+$/g) || [clean];
+    
+    const chunks: string[] = [];
+    let currentChunk = "";
+
+    for (const sentence of sentences) {
+        // Eğer mevcut parça + yeni cümle limiti aşmıyorsa ekle
+        if ((currentChunk + sentence).length <= limit) {
+            currentChunk += sentence + " ";
+        } else {
+            // Limiti aşıyorsa, mevcut parçayı listeye at ve yeni parçaya başla
+            if (currentChunk.trim()) chunks.push(currentChunk.trim());
+            
+            // Eğer tek bir cümle limitin kendisinden büyükse, mecburen o cümleyi de bölmemiz gerekebilir
+            // (Ancak 600 karakterlik cümle nadirdir, şimdilik direkt atıyoruz)
+            currentChunk = sentence + " ";
+        }
+    }
+    // Kalan son parçayı ekle
+    if (currentChunk.trim()) chunks.push(currentChunk.trim());
+
+    return chunks;
 }
 
 // Yardımcı: Timeout'lu Fetch
@@ -93,8 +123,10 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
   try {
     const response = await withTimeout(ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Aşağıdaki rüyayı yorumla. Yorumun KISA, ÖZ ve MİSTİK olsun. 
-        Okuyucuyu sıkmayacak şekilde, LÜTFEN MAKSİMUM 500 KARAKTER (yaklaşık 3-4 cümle) kullanarak tabir et.
+        contents: `Aşağıdaki rüyayı yorumla. Yorumun derinlikli, mistik ve rehberlik edici olsun.
+        
+        ÖNEMLİ: Kullanıcıya detaylı bir analiz sun. Metin uzunluğu 2500 karaktere kadar çıkabilir. 
+        Edebi bir dil kullan.
         
         Rüya: "${dreamText}"
         
@@ -102,7 +134,7 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
         {
         "sentiment": "positive" veya "negative" veya "neutral",
         "title": "Rüyaya kısa, güvenli, soyut bir başlık (örn: Mistik Orman)",
-        "interpretation": "Kısa ve öz yorum (max 500 karakter)"
+        "interpretation": "Detaylı rüya yorumu (max 2500 karakter)"
         }`,
         config: {
         responseSchema: {
@@ -137,20 +169,17 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 };
 
 // 3. Generate Image
-// Değişiklik: Artık ham metin yerine filtrelenmiş 'promptSubject' alıyor (Genellikle Başlık)
 export const generateDreamImage = async (promptSubject: string, sentiment: string): Promise<string> => {
-  // Güvenlik için promptu çok sade tutuyoruz. Detaylı rüya metni filtreye takılır.
   const mood = sentiment === 'positive' ? "ethereal, mystical, bright colors, dreamlike" : "surreal, dark fantasy, mysterious, cinematic lighting";
   const prompt = `Cinematic digital art of: ${promptSubject}. ${mood}, masterpiece, 8k resolution.`;
 
-  // Retry logic: 1 kez tekrar dene
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
         const response = await withTimeout(ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: { parts: [{ text: prompt }] },
             config: {
-                safetySettings: SAFETY_SETTINGS // Güvenlik filtresi takılmasını önle
+                safetySettings: SAFETY_SETTINGS
             }
         }), 45000);
 
@@ -161,19 +190,18 @@ export const generateDreamImage = async (promptSubject: string, sentiment: strin
         }
     } catch (e: any) {
         console.error(`Image gen attempt ${attempt + 1} failed:`, e);
-        if (attempt === 1) return ""; // Son deneme de başarısızsa boş dön
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Bekle ve tekrar dene
+        if (attempt === 1) return "";
+        await new Promise(resolve => setTimeout(resolve, 1500));
     }
   }
   return "";
 };
 
-// 4. Text to Speech
-export const generateDreamSpeech = async (text: string): Promise<{ audioData: Float32Array, sampleRate: number }> => {
-  // Metni temizle ve kısalt
-  const cleanText = cleanTextForTTS(text);
-  // Timeout'u engellemek için karakter limitini 600'e çektik.
-  const safeText = cleanText.length > 600 ? cleanText.substring(0, 600) + "." : cleanText;
+// 4. Text to Speech (Chunk Based)
+export const generateDreamSpeech = async (textChunk: string): Promise<AudioData> => {
+  // Not: textChunk zaten splitTextForTTS ile güvenli boyuta indirilmiş olmalı.
+  // Yine de ekstra bir güvenlik kontrolü yapalım, API 4096 byte limitine takılmasın.
+  const safeText = textChunk.length > 800 ? textChunk.substring(0, 800) : textChunk;
 
   try {
     const response = await withTimeout(ai.models.generateContent({
@@ -188,10 +216,10 @@ export const generateDreamSpeech = async (text: string): Promise<{ audioData: Fl
         },
         safetySettings: SAFETY_SETTINGS
         },
-    }), 100000); 
+    }), 60000); // 60sn timeout per chunk
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!base64Audio) throw new Error("API'den ses verisi dönmedi (Boş yanıt).");
+    if (!base64Audio) throw new Error("API'den ses verisi dönmedi.");
 
     const binaryString = atob(base64Audio);
     const len = binaryString.length;
@@ -208,14 +236,12 @@ export const generateDreamSpeech = async (text: string): Promise<{ audioData: Fl
         float32[i] = pcm16[i] / 32768.0;
     }
 
-    if (float32.length < 100) throw new Error("Ses verisi çok kısa/boş.");
-
     return {
         audioData: float32,
         sampleRate: 24000
     };
   } catch (e) {
-      console.error("TTS Generation Failed:", e);
+      console.error("TTS Chunk Failed:", e);
       throw e;
   }
 };
