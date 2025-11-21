@@ -83,9 +83,10 @@ const App: React.FC = () => {
       const text = await transcribeAudio(blob);
       setDreamText(text);
       setStatus(AppStatus.IDLE);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       setStatus(AppStatus.ERROR);
+      alert("Hata: " + (error.message || "Bilinmeyen bir hata oluştu."));
     }
   };
 
@@ -118,10 +119,11 @@ const App: React.FC = () => {
       // Scroll to result
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       setStatus(AppStatus.ERROR);
-      alert("Bir hata oluştu. Lütfen tekrar deneyiniz veya rüyanızı kısaltınız.");
+      // Show specific error message from the backend/service
+      alert("Hata: " + (error.message || "Bir hata oluştu. Lütfen tekrar deneyiniz."));
     }
   };
 
