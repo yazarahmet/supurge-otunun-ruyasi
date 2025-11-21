@@ -53,13 +53,13 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
 };
 
 // 2. Analyze Dream (Text Interpretation)
-// Model: gemini-3-pro-preview
+// Model: gemini-2.5-flash (Changed from pro to flash for better free tier limits)
 export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis> => {
   if (!apiKey) throw new Error("API Anahtarı eksik. Lütfen Vercel ayarlarından API_KEY ekleyin.");
 
   try {
     const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-2.5-flash',
         contents: `Aşağıdaki rüyayı detaylı bir şekilde tabir et. 
         Rüya: "${dreamText}"
         
@@ -92,7 +92,7 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 };
 
 // 3. Generate Image
-// Model: gemini-3-pro-image-preview with fallback to gemini-2.5-flash-image
+// Model: gemini-2.5-flash-image (Reliable free tier model)
 export const generateDreamImage = async (dreamText: string, sentiment: string): Promise<string> => {
   if (!apiKey) return ""; // Görsel için sessizce başarısız ol, akışı bozma
 
@@ -111,21 +111,6 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
     return null;
   };
 
-  // Attempt 1: High Quality Model
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview',
-      contents: {
-        parts: [{ text: prompt }]
-      }
-    });
-    const img = extractImage(response);
-    if (img) return img;
-  } catch (e) {
-    console.warn("gemini-3-pro-image-preview failed, attempting fallback...", e);
-  }
-
-  // Attempt 2: Fallback Model (Flash Image)
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
@@ -136,7 +121,7 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
     const img = extractImage(response);
     if (img) return img;
   } catch (e) {
-    console.error("All image generation models failed", e);
+    console.error("Image generation failed", e);
   }
   
   throw new Error("Görsel oluşturulamadı.");
@@ -189,7 +174,7 @@ export const generateDreamSpeech = async (text: string): Promise<{ audioData: Fl
 };
 
 // 5. Keyword Chat
-// Model: gemini-3-pro-preview
+// Model: gemini-2.5-flash
 export const askKeywordQuestion = async (
   dreamText: string, 
   interpretation: string, 
@@ -206,7 +191,7 @@ export const askKeywordQuestion = async (
   Sadece sorulan anahtar kelimenin rüya tabirindeki anlamını açıkla. Kısa ve öz ol. Mistik bir dil kullan.`;
 
   const chat = ai.chats.create({
-    model: 'gemini-3-pro-preview',
+    model: 'gemini-2.5-flash',
     config: { systemInstruction },
     history: history
   });
