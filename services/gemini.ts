@@ -45,26 +45,19 @@ export function splitTextForTTS(text: string, limit: number = 600): string[] {
     // Metni temizle
     const clean = cleanTextForTTS(text);
     // Cümlelere böl (Nokta, ünlem, soru işareti ve ardından boşluk veya satır sonu)
-    // Regex açıklaması: [.!?]+ (noktalama), ["']? (opsiyonel tırnak), (\s|$) (boşluk veya son)
     const sentences = clean.match(/[^.!?]+[.!?]+["']?|.+$/g) || [clean];
     
     const chunks: string[] = [];
     let currentChunk = "";
 
     for (const sentence of sentences) {
-        // Eğer mevcut parça + yeni cümle limiti aşmıyorsa ekle
         if ((currentChunk + sentence).length <= limit) {
             currentChunk += sentence + " ";
         } else {
-            // Limiti aşıyorsa, mevcut parçayı listeye at ve yeni parçaya başla
             if (currentChunk.trim()) chunks.push(currentChunk.trim());
-            
-            // Eğer tek bir cümle limitin kendisinden büyükse, mecburen o cümleyi de bölmemiz gerekebilir
-            // (Ancak 600 karakterlik cümle nadirdir, şimdilik direkt atıyoruz)
             currentChunk = sentence + " ";
         }
     }
-    // Kalan son parçayı ekle
     if (currentChunk.trim()) chunks.push(currentChunk.trim());
 
     return chunks;
@@ -125,16 +118,18 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
         model: 'gemini-2.5-flash',
         contents: `Aşağıdaki rüyayı yorumla. Yorumun derinlikli, mistik ve rehberlik edici olsun.
         
-        ÖNEMLİ: Kullanıcıya detaylı bir analiz sun. Metin uzunluğu 2500 karaktere kadar çıkabilir. 
-        Edebi bir dil kullan.
+        ÖNEMLİ: 
+        1. Kullanıcıya detaylı bir analiz sun. Metin uzunluğu 2500 karaktere kadar çıkabilir. Edebi bir dil kullan.
+        2. Ayrıca, bu rüyayı görselleştirmek için bir yapay zeka resim oluşturucusuna (AI Image Generator) verilecek İNGİLİZCE bir 'imagePrompt' oluştur. Bu prompt; soyut, sanatsal, sinematik ve GÜVENLİ (NSFW olmayan, şiddet içermeyen) olmalı.
         
         Rüya: "${dreamText}"
         
         Yanıtı MÜMKÜNSE şu JSON formatında ver:
         {
         "sentiment": "positive" veya "negative" veya "neutral",
-        "title": "Rüyaya kısa, güvenli, soyut bir başlık (örn: Mistik Orman)",
-        "interpretation": "Detaylı rüya yorumu (max 2500 karakter)"
+        "title": "Rüyaya kısa, Türkçe başlık",
+        "interpretation": "Detaylı rüya yorumu (Türkçe)",
+        "imagePrompt": "Cinematic digital art description in English..."
         }`,
         config: {
         responseSchema: {
@@ -142,7 +137,8 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
             properties: {
             sentiment: { type: Type.STRING, enum: ["positive", "negative", "neutral"] },
             title: { type: Type.STRING },
-            interpretation: { type: Type.STRING }
+            interpretation: { type: Type.STRING },
+            imagePrompt: { type: Type.STRING }
             }
         },
         safetySettings: SAFETY_SETTINGS
@@ -155,12 +151,14 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
         if (!data.interpretation) data.interpretation = rawText;
         if (!data.title) data.title = "Rüya Tabiri";
         if (!data.sentiment) data.sentiment = "neutral";
+        if (!data.imagePrompt) data.imagePrompt = "A mystical dreamscape, ethereal fog, surreal atmosphere, cinematic lighting, 8k resolution";
         return data as DreamAnalysis;
     } catch (jsonError) {
         return {
             sentiment: 'neutral',
             title: 'Rüya Yorumu',
-            interpretation: rawText.replace(/```json|```/g, '').trim()
+            interpretation: rawText.replace(/```json|```/g, '').trim(),
+            imagePrompt: "A mystical dreamscape, ethereal fog, surreal atmosphere, cinematic lighting, 8k resolution"
         };
     }
   } catch (error: any) {
@@ -169,15 +167,18 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 };
 
 // 3. Generate Image
-export const generateDreamImage = async (promptSubject: string, sentiment: string): Promise<string> => {
-  const mood = sentiment === 'positive' ? "ethereal, mystical, bright colors, dreamlike" : "surreal, dark fantasy, mysterious, cinematic lighting";
-  const prompt = `Cinematic digital art of: ${promptSubject}. ${mood}, masterpiece, 8k resolution.`;
+export const generateDreamImage = async (imagePrompt: string): Promise<string> => {
+  // Prompt zaten İngilizce ve güvenli olarak analiz aşamasında üretildi.
+  // Yine de sonuna stil ekleyelim.
+  const finalPrompt = `${imagePrompt}, masterpiece, 8k resolution, highly detailed, digital art.`;
+
+  console.log("Generating image with prompt:", finalPrompt);
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
         const response = await withTimeout(ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
-            contents: { parts: [{ text: prompt }] },
+            contents: { parts: [{ text: finalPrompt }] },
             config: {
                 safetySettings: SAFETY_SETTINGS
             }
@@ -190,8 +191,8 @@ export const generateDreamImage = async (promptSubject: string, sentiment: strin
         }
     } catch (e: any) {
         console.error(`Image gen attempt ${attempt + 1} failed:`, e);
-        if (attempt === 1) return "";
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        if (attempt === 1) return ""; // Başarısız olursa boş string dön (App.tsx bunu handle eder)
+        await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
   return "";
@@ -199,8 +200,7 @@ export const generateDreamImage = async (promptSubject: string, sentiment: strin
 
 // 4. Text to Speech (Chunk Based)
 export const generateDreamSpeech = async (textChunk: string): Promise<AudioData> => {
-  // Not: textChunk zaten splitTextForTTS ile güvenli boyuta indirilmiş olmalı.
-  // Yine de ekstra bir güvenlik kontrolü yapalım, API 4096 byte limitine takılmasın.
+  // API limiti için güvenlik
   const safeText = textChunk.length > 800 ? textChunk.substring(0, 800) : textChunk;
 
   try {
@@ -216,7 +216,7 @@ export const generateDreamSpeech = async (textChunk: string): Promise<AudioData>
         },
         safetySettings: SAFETY_SETTINGS
         },
-    }), 60000); // 60sn timeout per chunk
+    }), 60000); 
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (!base64Audio) throw new Error("API'den ses verisi dönmedi.");
