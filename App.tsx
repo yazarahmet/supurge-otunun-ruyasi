@@ -145,7 +145,6 @@ const App: React.FC = () => {
         // Eğer kullanıcı manuel durdurmadıysa sıradakine geç
         if (activeAudioSourceRef.current === source) { // Eski source kontrolü (Race condition önlemi)
              // React state update'i ve bir sonraki çağrı arasında küçük bir boşluk olabilir, sorun değil.
-             // Recursion yerine useEffect veya direct call kullanılabilir ama async loop için bu pratik.
              playAudioSequence(startIndex + 1);
         }
       };
@@ -220,7 +219,7 @@ const App: React.FC = () => {
     setCurrentAudioIndex(0);
 
     try {
-      // 1. Analyze Text
+      // 1. Analyze Text (Şimdi imagePrompt da dönüyor)
       const analysisResult = await analyzeDreamText(dreamText);
       setAnalysis(analysisResult);
 
@@ -236,11 +235,12 @@ const App: React.FC = () => {
          }
       }
 
-      // 2. Generate Image
+      // 2. Generate Image (İngilizce prompt kullanıyoruz artık)
       setStatus(AppStatus.GENERATING_IMAGE);
       try {
-        const promptSubject = analysisResult.title || dreamText.substring(0, 50);
-        const img = await generateDreamImage(promptSubject, analysisResult.sentiment);
+        // Eğer analizden imagePrompt geldiyse onu kullan, yoksa title'ı kullan (Fallback)
+        const promptToUse = analysisResult.imagePrompt || analysisResult.title || dreamText.substring(0, 50);
+        const img = await generateDreamImage(promptToUse);
         setImageUrl(img);
       } catch (imgError) {
         console.warn("Görsel oluşturma hatası (sessizce geçildi):", imgError);
