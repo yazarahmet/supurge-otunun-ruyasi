@@ -156,19 +156,31 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 export const generateDreamImage = async (dreamText: string, sentiment: string): Promise<string> => {
   if (!apiKey) return "";
 
-  const moodPrompt = sentiment === 'positive' 
-    ? "divine light, ethereal, soft pastel colors, dreamlike, masterpiece" 
-    : "mysterious, dark fog, gothic, deep shadows, dreamlike, masterpiece";
+  // PROMPT OPTİMİZASYONU:
+  // Rüya metni çok uzun olduğunda görsel modeli (Imagen/Gemini Image) odaklanamayabilir 
+  // veya güvenlik filtrelerine takılabilir. Metni kısaltarak şansımızı artırıyoruz.
+  const safeText = dreamText.length > 350 ? dreamText.substring(0, 350) + "..." : dreamText;
 
-  const prompt = `Surrealist oil painting: ${dreamText}. Style: ${moodPrompt}`;
+  const moodPrompt = sentiment === 'positive' 
+    ? "ethereal lighting, divine atmosphere, soft pastel colors, dreamlike, masterpiece, 8k resolution" 
+    : "mysterious atmosphere, dark fog, gothic style, deep shadows, surreal, masterpiece, 8k resolution";
+
+  // Prompt'u daha sanatsal bir çerçeveye oturtuyoruz
+  const prompt = `Surrealist concept art depicting this dream scene: ${safeText}. Art style: ${moodPrompt}`;
 
   try {
     const response = await withTimeout(ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
         parts: [{ text: prompt }]
+      },
+      config: {
+         // @ts-ignore - imageConfig tipi bazen eksik olabilir ama API destekler
+         imageConfig: {
+            aspectRatio: "16:9" // UI ile uyumlu olması için
+         }
       }
-    }), 45000); // Görsel için 45sn timeout
+    }), 50000); // Görsel için 50sn timeout (Vercel ortamı için biraz daha esnek)
 
     // Yanıtı tara
     for (const part of response.candidates?.[0]?.content?.parts || []) {
@@ -176,9 +188,10 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
         return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
+    console.warn("Görsel oluşturma yanıtı boş döndü.");
     return "";
   } catch (e) {
-    console.error("Image generation failed", e);
+    console.error("Image generation failed:", e);
     return ""; // Sessizce başarısız ol, akışı bozma
   }
 };
@@ -237,23 +250,20 @@ export const askKeywordQuestion = async (
   
   const systemInstruction = `Sen Süpürge Otu adında rüya tabircisisin. Rüya: "${dreamText}". Tabir: "${interpretation}". Soruya kısa ve mistik cevap ver.`;
 
-  // Geçmişi doğru formatta hazırla (Gemini SDK formatı)
-  // History verisi ChatSession başlatılırken verilir.
-  
   try {
     const chat = ai.chats.create({
-        model: 'gemini-2.5-flash',
-        config: { systemInstruction },
-        history: history.map(h => ({
-            role: h.role,
-            parts: h.parts,
-        }))
+      model: 'gemini-2.5-flash',
+      config: {
+        systemInstruction: systemInstruction
+      },
+      history: history as any
     });
 
-    const result = await withTimeout(chat.sendMessage({ message: question }));
-    return result.text || "Sessizlik...";
+    const response = await withTimeout(chat.sendMessage({ message: question }));
+    return response.text || "Şu an ruhlar sessizliğini koruyor...";
+
   } catch (e) {
       console.error("Chat error:", e);
-      return "Şu an cevap veremiyorum.";
+      return "Bir hata oluştu, lütfen daha sonra tekrar sor.";
   }
 };
