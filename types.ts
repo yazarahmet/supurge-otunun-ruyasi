@@ -9,6 +9,11 @@ export interface ChatMessage {
   text: string;
 }
 
+export interface AudioData {
+  audioData: Float32Array;
+  sampleRate: number;
+}
+
 export enum AppStatus {
   IDLE = 'IDLE',
   RECORDING = 'RECORDING',
