@@ -128,24 +128,20 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 export const generateDreamImage = async (dreamText: string, sentiment: string): Promise<string> => {
   if (!apiKey) return "";
 
-  // FIX: Vercel ortamında timeout ve hata almamak için prompt'u çok daha kısa tutuyoruz.
-  // 150 karaktere indirip sadece anahtar kelimeleri almaya çalışıyoruz.
-  const safeText = dreamText.length > 150 ? dreamText.substring(0, 150) + "..." : dreamText;
-
-  const mood = sentiment === 'positive' ? "mystical, bright, ethereal" : "dark, mysterious, surreal";
+  // FIX: Vercel ortamında "Bad Request" hatalarını önlemek için prompt'u temizle ve basitleştir.
+  const safeText = dreamText.length > 100 ? dreamText.substring(0, 100) : dreamText;
+  const mood = sentiment === 'positive' ? "mystical and bright" : "dark and surreal";
   
-  // Basit prompt yapısı
-  const prompt = `Dream scene concept art: ${safeText}. Style: ${mood}, high quality.`;
+  // Prompt çok basit tutuluyor.
+  const prompt = `Surreal dream art: ${safeText}. ${mood}. High quality.`;
 
   try {
     const response = await withTimeout(ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: { parts: [{ text: prompt }] },
-      config: {
-         // @ts-ignore
-         imageConfig: { aspectRatio: "16:9" }
-      }
-    }), 45000); // 45sn timeout
+      // FIX: aspectRatio config'i bazı ortamlarda anında hata verdirebiliyor, kaldırdık.
+      // Default kare (1:1) olarak gelsin, en güvenli yöntem budur.
+    }), 40000);
 
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
@@ -153,8 +149,9 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
       }
     }
     return "";
-  } catch (e) {
-    console.warn("Image generation skipped/failed:", e);
+  } catch (e: any) {
+    // Hata detayını konsola basalım ki Vercel loglarında görünsün.
+    console.error("Image generation failed details:", e);
     return "";
   }
 };
@@ -163,45 +160,49 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
 export const generateDreamSpeech = async (text: string): Promise<{ audioData: Float32Array, sampleRate: number }> => {
   if (!apiKey) throw new Error("API Anahtarı eksik.");
 
-  // FIX: Karakter limitini 500'den 4000'e çıkardık.
-  // Gemini TTS genellikle 4096 token civarına kadar destekler.
-  const safeText = text.length > 4000 ? text.substring(0, 4000) + "..." : text;
+  // Karakter limiti 4000.
+  const safeText = text.length > 4000 ? text.substring(0, 4000) : text;
 
-  const response = await withTimeout(ai.models.generateContent({
-    model: "gemini-2.5-flash-preview-tts",
-    contents: [{ parts: [{ text: safeText }] }],
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: 'Kore' },
+  try {
+    const response = await withTimeout(ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: safeText }] }],
+        config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+            voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
         },
-      },
-    },
-  }));
+        },
+    }));
 
-  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  if (!base64Audio) throw new Error("Ses verisi alınamadı.");
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) throw new Error("API'den ses verisi dönmedi.");
 
-  const binaryString = atob(base64Audio);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+    const binaryString = atob(base64Audio);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    const buffer = bytes.buffer;
+    const pcm16 = new Int16Array(buffer, 0, Math.floor(bytes.length / 2));
+    const float32 = new Float32Array(pcm16.length);
+    
+    for (let i = 0; i < pcm16.length; i++) {
+        float32[i] = pcm16[i] / 32768.0;
+    }
+
+    return {
+        audioData: float32,
+        sampleRate: 24000
+    };
+  } catch (e) {
+      console.error("TTS Generation Failed:", e);
+      throw e;
   }
-
-  const buffer = bytes.buffer;
-  const pcm16 = new Int16Array(buffer, 0, Math.floor(bytes.length / 2));
-  const float32 = new Float32Array(pcm16.length);
-  
-  for (let i = 0; i < pcm16.length; i++) {
-    float32[i] = pcm16[i] / 32768.0;
-  }
-
-  return {
-    audioData: float32,
-    sampleRate: 24000
-  };
 };
 
 // 5. Keyword Chat
