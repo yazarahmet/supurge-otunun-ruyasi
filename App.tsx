@@ -117,6 +117,7 @@ const App: React.FC = () => {
       setAnalysis(analysisResult);
 
       // FIX: Tabir biter bitmez arka planda sesi hazırlamaya başla (Pre-fetch)
+      // Metin varsa hemen ses üretimini başlatıyoruz.
       if (analysisResult.interpretation) {
          console.log("Arka planda ses hazırlanıyor...");
          audioPromiseRef.current = generateDreamSpeech(analysisResult.interpretation)
@@ -126,8 +127,8 @@ const App: React.FC = () => {
                return result;
            })
            .catch(err => {
-               console.warn("Arka plan ses oluşturma hatası:", err);
-               // Promise'i null yapmıyoruz, hatayı içinde tutsun, aşağıda catch ile yakalarız.
+               console.warn("Arka plan ses oluşturma hatası (Pre-fetch failed):", err);
+               // Promise'i rejection olarak bırakıyoruz, play butonunda yakalayacağız.
                throw err;
            });
       }
@@ -227,7 +228,7 @@ const App: React.FC = () => {
 
     } catch (e) {
       console.error("Ses oynatma/oluşturma hatası (Nihai):", e);
-      alert("Ses oluşturulamadı. Lütfen tekrar deneyin.");
+      alert("Ses oluşturulamadı. İçerik güvenlik politikasına takılmış olabilir.");
       setIsPlayingAudio(false);
     } finally {
         setIsLoadingAudio(false);
