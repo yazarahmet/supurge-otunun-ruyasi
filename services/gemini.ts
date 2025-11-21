@@ -94,15 +94,15 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
     const response = await withTimeout(ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: `Aşağıdaki rüyayı yorumla. Yorumun KISA, ÖZ ve MİSTİK olsun. 
-        Okuyucuyu sıkmayacak şekilde, LÜTFEN MAKSİMUM 800 KARAKTER kullanarak tabir et.
+        Okuyucuyu sıkmayacak şekilde, LÜTFEN MAKSİMUM 500 KARAKTER (yaklaşık 3-4 cümle) kullanarak tabir et.
         
         Rüya: "${dreamText}"
         
         Yanıtı MÜMKÜNSE şu JSON formatında ver:
         {
         "sentiment": "positive" veya "negative" veya "neutral",
-        "title": "Rüyaya kısa başlık",
-        "interpretation": "Kısa ve öz yorum (max 800 karakter)"
+        "title": "Rüyaya kısa, güvenli, soyut bir başlık (örn: Mistik Orman)",
+        "interpretation": "Kısa ve öz yorum (max 500 karakter)"
         }`,
         config: {
         responseSchema: {
@@ -137,10 +137,11 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 };
 
 // 3. Generate Image
-export const generateDreamImage = async (dreamText: string, sentiment: string): Promise<string> => {
-  const safeText = dreamText.length > 100 ? dreamText.substring(0, 100) : dreamText;
-  const mood = sentiment === 'positive' ? "mystical bright" : "dark surreal";
-  const prompt = `Surreal art: ${safeText}. ${mood}.`;
+// Değişiklik: Artık ham metin yerine filtrelenmiş 'promptSubject' alıyor (Genellikle Başlık)
+export const generateDreamImage = async (promptSubject: string, sentiment: string): Promise<string> => {
+  // Güvenlik için promptu çok sade tutuyoruz. Detaylı rüya metni filtreye takılır.
+  const mood = sentiment === 'positive' ? "ethereal, mystical, bright colors, dreamlike" : "surreal, dark fantasy, mysterious, cinematic lighting";
+  const prompt = `Cinematic digital art of: ${promptSubject}. ${mood}, masterpiece, 8k resolution.`;
 
   // Retry logic: 1 kez tekrar dene
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -161,7 +162,7 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
     } catch (e: any) {
         console.error(`Image gen attempt ${attempt + 1} failed:`, e);
         if (attempt === 1) return ""; // Son deneme de başarısızsa boş dön
-        await new Promise(resolve => setTimeout(resolve, 1000)); // 1sn bekle tekrar dene
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Bekle ve tekrar dene
     }
   }
   return "";
@@ -171,9 +172,8 @@ export const generateDreamImage = async (dreamText: string, sentiment: string): 
 export const generateDreamSpeech = async (text: string): Promise<{ audioData: Float32Array, sampleRate: number }> => {
   // Metni temizle ve kısalt
   const cleanText = cleanTextForTTS(text);
-  // Timeout'u engellemek için karakter limitini düşürdük (800 karakter).
-  // Uzun metinler modelin yanıt vermesini çok geciktirir.
-  const safeText = cleanText.length > 800 ? cleanText.substring(0, 800) + "..." : cleanText;
+  // Timeout'u engellemek için karakter limitini 600'e çektik.
+  const safeText = cleanText.length > 600 ? cleanText.substring(0, 600) + "." : cleanText;
 
   try {
     const response = await withTimeout(ai.models.generateContent({
@@ -183,12 +183,12 @@ export const generateDreamSpeech = async (text: string): Promise<{ audioData: Fl
         responseModalities: [Modality.AUDIO],
         speechConfig: {
             voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' }, // Kore veya Puck deneyebiliriz
+            prebuiltVoiceConfig: { voiceName: 'Kore' }, 
             },
         },
         safetySettings: SAFETY_SETTINGS
         },
-    }), 100000); // Timeout süresi artırıldı: 100 saniye
+    }), 100000); 
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (!base64Audio) throw new Error("API'den ses verisi dönmedi (Boş yanıt).");
@@ -208,7 +208,6 @@ export const generateDreamSpeech = async (text: string): Promise<{ audioData: Fl
         float32[i] = pcm16[i] / 32768.0;
     }
 
-    // Eğer ses verisi çok kısaysa (örn: hata sesi veya boşluk) hata fırlat
     if (float32.length < 100) throw new Error("Ses verisi çok kısa/boş.");
 
     return {
