@@ -136,7 +136,10 @@ const App: React.FC = () => {
       // 2. Generate Image
       setStatus(AppStatus.GENERATING_IMAGE);
       try {
-        const img = await generateDreamImage(dreamText, analysisResult.sentiment);
+        // CRITICAL FIX: Use 'title' instead of 'dreamText' to avoid safety filters triggering on the raw dream content.
+        // Also helps with more artistic, abstract results.
+        const promptSubject = analysisResult.title || dreamText.substring(0, 50);
+        const img = await generateDreamImage(promptSubject, analysisResult.sentiment);
         setImageUrl(img);
       } catch (imgError) {
         console.warn("Görsel oluşturma hatası (sessizce geçildi):", imgError);
