@@ -2,6 +2,7 @@ export interface DreamAnalysis {
   sentiment: 'positive' | 'negative' | 'neutral';
   interpretation: string;
   title: string;
+  imagePrompt: string; // Görsel oluşturucu için özel İngilizce prompt
 }
 
 export interface ChatMessage {
