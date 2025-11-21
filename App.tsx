@@ -21,6 +21,8 @@ const App: React.FC = () => {
   const playbackAudioCtxRef = useRef<AudioContext | null>(null);
   const activeAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const audioCacheRef = useRef<{ audioData: Float32Array, sampleRate: number } | null>(null);
+  // FIX: Arka planda devam eden ses isteğini tutmak için Promise ref
+  const audioPromiseRef = useRef<Promise<{ audioData: Float32Array, sampleRate: number }> | null>(null);
 
   // Scroll refs
   const resultRef = useRef<HTMLDivElement>(null);
@@ -33,7 +35,6 @@ const App: React.FC = () => {
     if (analysis.sentiment === 'positive') {
       return 'bg-gradient-to-br from-teal-50 via-emerald-100 to-cyan-100 text-emerald-900 transition-colors duration-1000 ease-in-out';
     } else {
-      // Negative/Neutral
       return 'bg-gradient-to-br from-gray-900 via-slate-800 to-stone-900 text-stone-300 transition-colors duration-1000 ease-in-out';
     }
   };
@@ -100,8 +101,10 @@ const App: React.FC = () => {
     setAnalysis(null);
     setImageUrl(null);
     setChatMessages([]);
-    // Yeni rüya analiz edildiğinde eski ses cache'ini ve player'ı temizle
+    
+    // Reset audio states
     audioCacheRef.current = null;
+    audioPromiseRef.current = null;
     if (activeAudioSourceRef.current) {
         try { activeAudioSourceRef.current.stop(); } catch(e) {}
         activeAudioSourceRef.current = null;
@@ -113,6 +116,22 @@ const App: React.FC = () => {
       const analysisResult = await analyzeDreamText(dreamText);
       setAnalysis(analysisResult);
 
+      // FIX: Tabir biter bitmez arka planda sesi hazırlamaya başla (Pre-fetch)
+      // Kullanıcı Play'e basana kadar bu promise arka planda çalışır.
+      if (analysisResult.interpretation) {
+         console.log("Arka planda ses hazırlanıyor...");
+         audioPromiseRef.current = generateDreamSpeech(analysisResult.interpretation)
+           .then(result => {
+               console.log("Ses hazırlığı tamamlandı.");
+               audioCacheRef.current = result; // Cache'e at
+               return result;
+           })
+           .catch(err => {
+               console.warn("Arka plan ses oluşturma hatası:", err);
+               throw err;
+           });
+      }
+
       // 2. Generate Image
       setStatus(AppStatus.GENERATING_IMAGE);
       try {
@@ -120,17 +139,14 @@ const App: React.FC = () => {
         setImageUrl(img);
       } catch (imgError) {
         console.warn("Görsel oluşturma hatası (sessizce geçildi):", imgError);
-        // Image remains null, no alert needed
       }
 
       setStatus(AppStatus.COMPLETE);
-      
-      // Scroll to result
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
 
     } catch (error: any) {
       console.error(error);
-      setStatus(AppStatus.IDLE); // Reset to IDLE so user can try again
+      setStatus(AppStatus.IDLE); 
       alert("Hata: " + (error.message || "Bir hata oluştu. Lütfen tekrar deneyiniz."));
     }
   };
@@ -138,47 +154,49 @@ const App: React.FC = () => {
   const toggleAudioPlayback = async () => {
     if (!analysis) return;
 
-    // DURDURMA MANTIĞI
+    // --- DURDURMA ---
     if (isPlayingAudio) {
         if (activeAudioSourceRef.current) {
-            try {
-                activeAudioSourceRef.current.stop();
-            } catch (e) {
-                console.warn("Ses durdurulurken hata:", e);
-            }
+            try { activeAudioSourceRef.current.stop(); } catch (e) {}
             activeAudioSourceRef.current = null;
         }
         setIsPlayingAudio(false);
         return;
     }
 
-    // BAŞLATMA MANTIĞI
+    // --- OYNATMA ---
     setIsLoadingAudio(true);
     try {
-      let audioData = audioCacheRef.current?.audioData;
-      let sampleRate = audioCacheRef.current?.sampleRate;
+      let audioData;
+      let sampleRate;
 
-      // Cache boşsa API'den çek
-      if (!audioData || !sampleRate) {
+      // 1. Önce Cache'e bak
+      if (audioCacheRef.current) {
+          audioData = audioCacheRef.current.audioData;
+          sampleRate = audioCacheRef.current.sampleRate;
+      } 
+      // 2. Cache yoksa, arka planda devam eden işleme (Promise) bak
+      else if (audioPromiseRef.current) {
+          const result = await audioPromiseRef.current;
+          audioData = result.audioData;
+          sampleRate = result.sampleRate;
+      }
+      // 3. Hiçbiri yoksa (fallback), sıfırdan oluştur
+      else {
           const result = await generateDreamSpeech(analysis.interpretation);
           audioData = result.audioData;
           sampleRate = result.sampleRate;
-          // Cache'e kaydet (böylece durdurup tekrar başlatırsa API harcamaz)
           audioCacheRef.current = result;
       }
       
-      // Reuse context
+      // Audio Context Hazırlığı
       if (!playbackAudioCtxRef.current || playbackAudioCtxRef.current.state === 'closed') {
          playbackAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
       const ctx = playbackAudioCtxRef.current;
       
-      // Resume if suspended
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
+      if (ctx.state === 'suspended') await ctx.resume();
 
-      // Create buffer
       const buffer = ctx.createBuffer(1, audioData.length, sampleRate);
       buffer.getChannelData(0).set(audioData);
 
@@ -186,7 +204,6 @@ const App: React.FC = () => {
       source.buffer = buffer;
       source.connect(ctx.destination);
       
-      // Source'u ref'e kaydet (durdurabilmek için)
       activeAudioSourceRef.current = source;
       
       source.onended = () => {
@@ -196,9 +213,10 @@ const App: React.FC = () => {
       
       source.start(0);
       setIsPlayingAudio(true);
+
     } catch (e) {
       console.error("Ses oynatma hatası:", e);
-      alert("Ses çalınamadı. Lütfen tekrar deneyin.");
+      // alert("Ses henüz hazır değil veya bir hata oluştu."); // Kullanıcıyı darlamamak için alert kapalı
       setIsPlayingAudio(false);
     } finally {
         setIsLoadingAudio(false);
@@ -214,7 +232,6 @@ const App: React.FC = () => {
     const question = currentQuestion;
     setCurrentQuestion('');
 
-    // Convert chat history for API
     const apiHistory = chatMessages.map(m => ({
         role: m.role,
         parts: [{ text: m.text }]
@@ -224,7 +241,6 @@ const App: React.FC = () => {
         const answer = await askKeywordQuestion(dreamText, analysis.interpretation, question, apiHistory);
         setChatMessages(prev => [...prev, { role: 'model', text: answer }]);
     } catch (error) {
-        console.error(error);
         setChatMessages(prev => [...prev, { role: 'model', text: "Üzgünüm, şu an cevap veremiyorum." }]);
     }
   };
@@ -236,7 +252,6 @@ const App: React.FC = () => {
   return (
     <div className={`min-h-screen flex flex-col font-sans selection:bg-purple-500 selection:text-white ${getTheme()}`}>
       
-      {/* Header */}
       <header className="p-6 text-center relative z-10">
         <h1 className="text-4xl md:text-6xl font-serif font-bold tracking-widest drop-shadow-lg">
           Süpürge Otu'nun Rüyası
@@ -248,7 +263,6 @@ const App: React.FC = () => {
 
       <main className="flex-grow container mx-auto px-4 pb-10 max-w-3xl relative z-10">
         
-        {/* Input Section */}
         <div className={`backdrop-blur-md rounded-3xl shadow-xl p-6 mb-8 border transition-all duration-500 ${getCardStyle()}`}>
           <div className="relative">
             <textarea
@@ -262,7 +276,6 @@ const App: React.FC = () => {
               }`}
             />
             
-            {/* Controls */}
             <div className="flex items-center justify-between mt-4">
                <button
                 onClick={status === AppStatus.RECORDING ? stopRecording : startRecording}
@@ -297,16 +310,13 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Status Indicators */}
         {status === AppStatus.TRANSCRIBING && (
           <div className="text-center py-4 animate-pulse">Ses metne dönüştürülüyor...</div>
         )}
 
-        {/* Results Section */}
         {(analysis || status === AppStatus.GENERATING_IMAGE || status === AppStatus.COMPLETE) && (
           <div ref={resultRef} className="space-y-8 animate-fade-in-up">
             
-            {/* Image Display */}
             <div className="relative aspect-video md:aspect-[16/9] rounded-2xl overflow-hidden shadow-2xl border-4 border-opacity-20 border-white group">
               {imageUrl ? (
                 <img src={imageUrl} alt="Rüya Görseli" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700" />
@@ -325,7 +335,6 @@ const App: React.FC = () => {
               )}
             </div>
 
-            {/* Interpretation Text */}
             {analysis && (
               <div className={`backdrop-blur-md rounded-3xl p-8 shadow-xl border ${getCardStyle()}`}>
                 <div className="flex justify-between items-start mb-4">
@@ -351,7 +360,6 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* Keyword Chat */}
             {analysis && (
               <div className={`backdrop-blur-md rounded-3xl p-6 shadow-xl border mt-8 ${getCardStyle()}`}>
                 <div className="border-b border-current border-opacity-20 pb-4 mb-4">
@@ -406,7 +414,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Decorative Background Elements */}
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
         <div className={`absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full mix-blend-overlay filter blur-[100px] animate-float ${analysis?.sentiment === 'positive' ? 'bg-emerald-400/30' : 'bg-purple-900/40'}`}></div>
         <div className={`absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full mix-blend-overlay filter blur-[100px] animate-float animation-delay-2000 ${analysis?.sentiment === 'positive' ? 'bg-cyan-300/30' : 'bg-indigo-900/40'}`}></div>
