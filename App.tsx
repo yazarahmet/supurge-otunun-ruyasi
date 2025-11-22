@@ -1,14 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AppStatus, DreamAnalysis, ChatMessage, AudioData } from './types';
-import { transcribeAudio, analyzeDreamText, generateDreamImage, generateDreamSpeech, askKeywordQuestion, splitTextForTTS } from './services/gemini';
-import { MicIcon, StopIcon, PlayIcon, PauseIcon, SendIcon, SparklesIcon, ImageIcon } from './components/Icons';
+import { transcribeAudio, analyzeDreamText, generateDreamSpeech, askKeywordQuestion, splitTextForTTS } from './services/gemini';
+import { MicIcon, StopIcon, PlayIcon, PauseIcon, SendIcon, SparklesIcon } from './components/Icons';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
   const [dreamText, setDreamText] = useState('');
   const [analysis, setAnalysis] = useState<DreamAnalysis | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageError, setImageError] = useState<string | null>(null); // Görsel hatasını UI'da göstermek için
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState('');
   
@@ -204,35 +202,11 @@ const App: React.FC = () => {
     }
   };
 
-  const handleRegenerateImage = async () => {
-      if (!analysis) return;
-      setImageError(null);
-      const promptToUse = analysis.imagePrompt || "Dream interpretation abstract art";
-      
-      const imgPlaceholder = document.getElementById('image-placeholder');
-      if (imgPlaceholder) imgPlaceholder.style.opacity = '0.5';
-
-      try {
-          const img = await generateDreamImage(promptToUse);
-          if (img) {
-             setImageUrl(img);
-             setImageError(null);
-          }
-      } catch (e: any) {
-          setImageError(e.message);
-          alert(`Görsel oluşturulamadı: ${e.message}`);
-      } finally {
-          if (imgPlaceholder) imgPlaceholder.style.opacity = '1';
-      }
-  };
-
   const processDream = async () => {
     if (!dreamText.trim()) return;
     
     setStatus(AppStatus.ANALYZING);
     setAnalysis(null);
-    setImageUrl(null);
-    setImageError(null);
     setChatMessages([]);
     
     // Reset audio states
@@ -254,18 +228,6 @@ const App: React.FC = () => {
          if (chunks.length > 0) {
              fetchAudioChunk(0).catch(e => console.warn("Arka plan ilk parça hazırlığı başarısız:", e));
          }
-      }
-
-      // 2. Generate Image (Hata olursa ana akışı bozma)
-      setStatus(AppStatus.GENERATING_IMAGE);
-      try {
-        const promptToUse = analysisResult.imagePrompt || "Dream abstract art";
-        const img = await generateDreamImage(promptToUse);
-        setImageUrl(img);
-      } catch (imgError: any) {
-        console.warn("Görsel oluşturulamadı (ilk deneme):", imgError);
-        setImageError(imgError.message || "Görsel servisi yoğun.");
-        // Görüntü gelmese bile işlem tamamlandı sayılır
       }
 
       setStatus(AppStatus.COMPLETE);
@@ -369,10 +331,10 @@ const App: React.FC = () => {
 
               <button
                 onClick={processDream}
-                disabled={!dreamText || status === AppStatus.ANALYZING || status === AppStatus.GENERATING_IMAGE}
+                disabled={!dreamText || status === AppStatus.ANALYZING}
                 className={`flex items-center gap-2 px-8 py-3 rounded-full font-bold text-lg shadow-lg transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${getButtonStyle()}`}
               >
-                {status === AppStatus.ANALYZING || status === AppStatus.GENERATING_IMAGE ? (
+                {status === AppStatus.ANALYZING ? (
                   <>
                     <SparklesIcon className="w-5 h-5 animate-spin" />
                     <span>Analiz Ediliyor...</span>
@@ -392,45 +354,20 @@ const App: React.FC = () => {
           <div className="text-center py-4 animate-pulse">Ses metne dönüştürülüyor...</div>
         )}
 
-        {(analysis || status === AppStatus.GENERATING_IMAGE || status === AppStatus.COMPLETE) && (
+        {(analysis || status === AppStatus.COMPLETE) && (
           <div ref={resultRef} className="space-y-8 animate-fade-in-up">
             
-            {/* GÖRSEL ALANI */}
-            <div id="image-placeholder" className="relative aspect-video md:aspect-[16/9] rounded-2xl overflow-hidden shadow-2xl border-4 border-opacity-20 border-white group transition-opacity duration-300">
-              {imageUrl ? (
-                <img src={imageUrl} alt="Rüya Görseli" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700" />
-              ) : (
-                <div className="w-full h-full bg-black/20 flex flex-col items-center justify-center backdrop-blur-sm p-4 text-center">
-                   <ImageIcon className="w-16 h-16 opacity-50 animate-bounce" />
-                   <p className="mt-4 font-serif italic mb-2">
-                     {status === AppStatus.GENERATING_IMAGE ? "Rüyanız görselleştiriliyor..." : "Görsel henüz oluşmadı."}
-                   </p>
-                   {imageError && (
-                       <p className="text-xs text-red-300 max-w-md mb-4">{imageError}</p>
-                   )}
-                   {status === AppStatus.COMPLETE && !imageUrl && (
-                       <button 
-                         onClick={handleRegenerateImage}
-                         className="px-6 py-2 bg-white/20 hover:bg-white/30 rounded-full text-sm font-bold backdrop-blur-md transition-colors flex items-center gap-2 border border-white/30"
-                       >
-                         <SparklesIcon className="w-4 h-4" />
-                         Tekrar Dene
-                       </button>
-                   )}
-                </div>
-              )}
-              {analysis?.title && imageUrl && (
-                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-6 pt-20">
-                    <h2 className="text-3xl font-serif text-white font-bold">{analysis.title}</h2>
-                 </div>
-              )}
-            </div>
-
             {analysis && (
               <div className={`backdrop-blur-md rounded-3xl p-8 shadow-xl border ${getCardStyle()}`}>
+                
+                {/* Title Section */}
+                <div className="mb-6 text-center border-b border-current border-opacity-20 pb-4">
+                   <h2 className="text-3xl font-serif font-bold mb-1">{analysis.title}</h2>
+                   <div className="text-sm opacity-70 uppercase tracking-widest">Rüya Analizi</div>
+                </div>
+
                 <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-xl font-serif font-bold uppercase tracking-widest opacity-80">Analiz</h3>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 ml-auto">
                     {/* İlerleme Göstergesi */}
                     {(isPlayingAudio || isLoadingAudio) && textChunksRef.current.length > 1 && (
                         <span className="text-xs opacity-60 font-mono">
