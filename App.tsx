@@ -317,7 +317,7 @@ const App: React.FC = () => {
           Süpürge Otu'nun Rüyası
         </h1>
         <p className="mt-2 text-lg opacity-80 font-light tracking-wide">
-          Bilinçaltının derinliklerine mistik bir yolculuk
+          Bilinçaltı analizi ve gerçek hayat rehberliği
         </p>
       </header>
 
@@ -357,7 +357,7 @@ const App: React.FC = () => {
                 {status === AppStatus.ANALYZING || status === AppStatus.GENERATING_IMAGE ? (
                   <>
                     <SparklesIcon className="w-5 h-5 animate-spin" />
-                    <span>Tabir Ediliyor...</span>
+                    <span>Analiz Ediliyor...</span>
                   </>
                 ) : (
                   <>
@@ -398,7 +398,7 @@ const App: React.FC = () => {
             {analysis && (
               <div className={`backdrop-blur-md rounded-3xl p-8 shadow-xl border ${getCardStyle()}`}>
                 <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-xl font-serif font-bold uppercase tracking-widest opacity-80">Tabir</h3>
+                  <h3 className="text-xl font-serif font-bold uppercase tracking-widest opacity-80">Analiz</h3>
                   <div className="flex items-center gap-2">
                     {/* İlerleme Göstergesi */}
                     {(isPlayingAudio || isLoadingAudio) && textChunksRef.current.length > 1 && (
@@ -431,17 +431,17 @@ const App: React.FC = () => {
               <div className={`backdrop-blur-md rounded-3xl p-6 shadow-xl border mt-8 ${getCardStyle()}`}>
                 <div className="border-b border-current border-opacity-20 pb-4 mb-4">
                   <h3 className="text-lg font-bold flex items-center gap-2">
-                    <span className="text-2xl">🔮</span> Rüya Sembolleri Sohbeti
+                    <span className="text-2xl">🧠</span> Sembol Analizi Sohbeti
                   </h3>
                   <p className="text-sm opacity-70 mt-1">
-                    Rüyanızdaki belirli sembolleri (örn: "yılan", "uçmak", "deniz") sorarak derinlemesine anlamını öğrenin.
+                    Rüyanızdaki belirli sembolleri (örn: "yılan", "uçmak") sorarak bilinçaltı anlamını öğrenin.
                   </p>
                 </div>
                 
                 <div className="h-64 overflow-y-auto mb-4 space-y-4 pr-2 scroll-smooth">
                   {chatMessages.length === 0 && (
                      <div className="text-center opacity-50 italic mt-20">
-                        "Rüyamda gördüğüm anahtar ne anlama geliyor?"
+                        "Rüyamda gördüğüm anahtar günlük hayatımda neyi simgeliyor?"
                      </div>
                   )}
                   {chatMessages.map((msg, idx) => (
