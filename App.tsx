@@ -205,19 +205,19 @@ const App: React.FC = () => {
 
   const handleRegenerateImage = async () => {
       if (!analysis) return;
-      const promptToUse = analysis.imagePrompt || analysis.title || dreamText.substring(0, 50);
+      // Use fallback to title if imagePrompt is somehow empty, but try to keep it simple
+      const promptToUse = analysis.imagePrompt || "Dream interpretation abstract art";
       
-      // Geçici bir "yükleniyor" durumu, ancak ana status'ü bozmadan
-      // Basitlik için UI'da bir loading spinner göstereceğiz
+      // Geçici bir "yükleniyor" durumu
       const imgPlaceholder = document.getElementById('image-placeholder');
       if (imgPlaceholder) imgPlaceholder.style.opacity = '0.5';
 
       try {
           const img = await generateDreamImage(promptToUse);
           if (img) setImageUrl(img);
-          else alert("Görsel yine oluşturulamadı. Lütfen daha sonra tekrar deneyin.");
-      } catch (e) {
-          alert("Hata: Görsel oluşturulamadı.");
+      } catch (e: any) {
+          // Burada asıl hatayı kullanıcıya gösteriyoruz
+          alert(`Görsel oluşturma hatası: ${e.message}`);
       } finally {
           if (imgPlaceholder) imgPlaceholder.style.opacity = '1';
       }
@@ -255,15 +255,16 @@ const App: React.FC = () => {
          }
       }
 
-      // 2. Generate Image (İngilizce prompt kullanıyoruz artık)
+      // 2. Generate Image
       setStatus(AppStatus.GENERATING_IMAGE);
       try {
-        // Eğer analizden imagePrompt geldiyse onu kullan, yoksa title'ı kullan (Fallback)
-        const promptToUse = analysisResult.imagePrompt || analysisResult.title || dreamText.substring(0, 50);
+        const promptToUse = analysisResult.imagePrompt || "Dream abstract art";
         const img = await generateDreamImage(promptToUse);
         setImageUrl(img);
-      } catch (imgError) {
-        console.warn("Görsel oluşturma hatası (sessizce geçildi):", imgError);
+      } catch (imgError: any) {
+        // Hata olsa bile akış bozulmasın, sadece loglayalım. 
+        // Kullanıcı "Tekrar Dene" butonu ile detaylı hatayı görebilir.
+        console.warn("İlk görsel denemesi başarısız:", imgError);
       }
 
       setStatus(AppStatus.COMPLETE);
