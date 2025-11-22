@@ -125,18 +125,19 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
         model: 'gemini-2.5-flash',
         contents: `Aşağıdaki rüyayı yorumla. Yorumun psikolojik tabanlı, gerçekçi ve güncel hayatla ilişkili olsun.
 
-        ÖNEMLİ: 
-        1. Mistik, falcı veya masalsı bir dil KULLANMA. Bunun yerine psikolojik analiz, bilinçaltı sembolizmi ve gerçek hayat pratikleri üzerine odaklan.
-        2. Rüyayı gören kişinin günlük hayatındaki stresler, ilişkiler, kariyer veya duygusal durumuyla bağlantılar kur. Somut çıkarımlarda bulun.
-        3. Kullanıcıya detaylı bir analiz sun. Metin uzunluğu 2500 karaktere kadar çıkabilir. Samimi, yapıcı ve anlaşılır bir dil kullan.
+        ÖNEMLİ KURALLAR:
+        1. **UZUNLUK VE DETAY:** Eğer rüya metni kısaysa (birkaç kelime veya tek cümle), yorumun KISA, NET ve DOĞRUDAN olsun (maksimum 1 paragraf). Eğer rüya uzun ve detaylıysa, o zaman detaylı bir analiz yapabilirsin.
+        2. **UYDURMA YOK:** Metinde olmayan detayları varmış gibi yorumlama. Laf kalabalığı yapma, metni yapay olarak uzatma.
+        3. **GERÇEKÇİLİK:** Mistik veya falcı dili yerine; psikolojik sembollere ve kişinin bilinçaltı durumuna odaklan.
+        4. **SOMUTLUK:** Kullanıcıya "şöyle olabilir, böyle olabilir" demek yerine daha net ve somut çıkarımlar sun.
         
         Rüya: "${dreamText}"
         
         Yanıtı MÜMKÜNSE şu JSON formatında ver:
         {
         "sentiment": "positive" veya "negative" veya "neutral",
-        "title": "Rüyaya kısa, Türkçe başlık",
-        "interpretation": "Gerçekçi ve psikolojik rüya yorumu (Türkçe)"
+        "title": "Rüyaya kısa, çarpıcı Türkçe başlık",
+        "interpretation": "Rüya yorumu (Türkçe)"
         }`,
         config: {
         responseSchema: {
