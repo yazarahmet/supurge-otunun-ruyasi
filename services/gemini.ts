@@ -4,7 +4,7 @@ import { DreamAnalysis, AudioData } from "../types";
 // API Key initialization per guidelines
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Güvenlik Ayarları: İçerik filtrelerine takılmamak için (Sadece Metin Modelleri İçin)
+// Güvenlik Ayarları: İçerik filtrelerine takılmamak için (Hem Metin Hem Görsel İçin)
 const SAFETY_SETTINGS = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
   { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -122,7 +122,7 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
         1. Mistik, falcı veya masalsı bir dil KULLANMA. Bunun yerine psikolojik analiz, bilinçaltı sembolizmi ve gerçek hayat pratikleri üzerine odaklan.
         2. Rüyayı gören kişinin günlük hayatındaki stresler, ilişkiler, kariyer veya duygusal durumuyla bağlantılar kur. Somut çıkarımlarda bulun.
         3. Kullanıcıya detaylı bir analiz sun. Metin uzunluğu 2500 karaktere kadar çıkabilir. Samimi, yapıcı ve anlaşılır bir dil kullan.
-        4. Ayrıca, bu rüyayı görselleştirmek için bir yapay zeka resim oluşturucusuna (AI Image Generator) verilecek İNGİLİZCE bir 'imagePrompt' oluştur. Bu prompt; soyut, sanatsal ama net ve GÜVENLİ (NSFW olmayan, şiddet içermeyen) olmalı.
+        4. Ayrıca, bu rüyayı görselleştirmek için bir yapay zeka resim oluşturucusuna (AI Image Generator) verilecek İNGİLİZCE bir 'imagePrompt' oluştur. Bu prompt; "digital art", "dreamy atmosphere" gibi anahtar kelimeler içersin. Güvenli (NSFW olmayan) ve temiz bir betimleme olsun.
         
         Rüya: "${dreamText}"
         
@@ -153,14 +153,17 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
         if (!data.interpretation) data.interpretation = rawText;
         if (!data.title) data.title = "Rüya Analizi";
         if (!data.sentiment) data.sentiment = "neutral";
-        if (!data.imagePrompt) data.imagePrompt = "A surreal dreamscape, psychological depth, symbolic art, cinematic lighting, 8k resolution";
+        // Fallback prompt if missing
+        if (!data.imagePrompt || data.imagePrompt.length < 5) {
+             data.imagePrompt = "Abstract dreamscape, peaceful colors, digital art, high quality";
+        }
         return data as DreamAnalysis;
     } catch (jsonError) {
         return {
             sentiment: 'neutral',
             title: 'Rüya Analizi',
             interpretation: rawText.replace(/```json|```/g, '').trim(),
-            imagePrompt: "A surreal dreamscape, psychological depth, symbolic art, cinematic lighting, 8k resolution"
+            imagePrompt: "Abstract dreamscape, peaceful colors, digital art, high quality"
         };
     }
   } catch (error: any) {
@@ -168,41 +171,71 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
   }
 };
 
-// 3. Generate Image
+// 3. Generate Image with Fallback Strategy
 export const generateDreamImage = async (imagePrompt: string): Promise<string> => {
-  // Prompt zaten İngilizce ve güvenli olarak analiz aşamasında üretildi.
-  const finalPrompt = `${imagePrompt}, digital art, highly detailed, surrealism but clear, 8k resolution.`;
+  const basePrompt = `${imagePrompt}, digital art, dreamy atmosphere, 8k resolution`;
+  let lastError = "";
 
-  console.log("Generating image with prompt:", finalPrompt);
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-        // ÖNEMLİ: Görsel modeline (gemini-2.5-flash-image) safetySettings GÖNDERME.
-        // Bazı platformlarda metin tabanlı güvenlik ayarları görsel modelinde "Invalid Argument" hatası verebilir.
-        // Ayrıca aspectRatio'yu 16:9 olarak ayarla.
-        const response = await withTimeout(ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: { parts: [{ text: finalPrompt }] },
-            config: {
-                // safetySettings: [], // Bilerek boş bırakıldı veya gönderilmedi.
-                imageConfig: {
-                    aspectRatio: "16:9"
-                }
-            }
-        }), 45000);
-
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-            if (part.inlineData) {
-                return `data:image/png;base64,${part.inlineData.data}`;
-            }
+  // STRATEJİ 1: 16:9 Oran + Güvenlik Ayarları Kapalı (BLOCK_NONE)
+  try {
+    console.log("Trying Image Gen Strategy 1 (16:9, Safe)");
+    const response = await withTimeout(ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts: [{ text: basePrompt }] },
+        config: {
+            safetySettings: SAFETY_SETTINGS, // Vercel'de defaultlar katı olabilir, bunu göndererek açıyoruz.
+            imageConfig: { aspectRatio: "16:9" }
         }
-    } catch (e: any) {
-        console.error(`Image gen attempt ${attempt + 1} failed:`, e);
-        if (attempt === 1) return ""; // Başarısız olursa boş string dön (App.tsx bunu handle eder)
-        await new Promise(resolve => setTimeout(resolve, 2000));
+    }), 30000);
+
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
     }
+  } catch (e: any) {
+    console.warn("Strategy 1 Failed:", e);
+    lastError = e.message || e.toString();
   }
-  return "";
+
+  // STRATEJİ 2: 1:1 Oran (Daha güvenli standart) + Güvenlik Ayarları Kapalı
+  // 16:9 desteklenmiyorsa veya hata veriyorsa buna düşer.
+  try {
+    console.log("Trying Image Gen Strategy 2 (1:1, Safe)");
+    const response = await withTimeout(ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts: [{ text: basePrompt }] },
+        config: {
+            safetySettings: SAFETY_SETTINGS,
+            imageConfig: { aspectRatio: "1:1" }
+        }
+    }), 30000);
+
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+    }
+  } catch (e: any) {
+    console.warn("Strategy 2 Failed:", e);
+    lastError = e.message || e.toString();
+  }
+
+  // STRATEJİ 3: Sadece Prompt (Config Yok) - En ilkel çağrı
+  try {
+    console.log("Trying Image Gen Strategy 3 (No Config)");
+    const response = await withTimeout(ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts: [{ text: basePrompt }] },
+        // Config göndermiyoruz, varsayılanları kullansın
+    }), 30000);
+
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+    }
+  } catch (e: any) {
+    console.error("Strategy 3 Failed:", e);
+    lastError = e.message || e.toString();
+  }
+
+  // Hepsi başarısız olursa hatayı fırlat ki kullanıcı görsün
+  throw new Error(lastError || "Görsel oluşturulamadı.");
 };
 
 // 4. Text to Speech (Chunk Based)
