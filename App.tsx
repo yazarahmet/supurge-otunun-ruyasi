@@ -203,6 +203,26 @@ const App: React.FC = () => {
     }
   };
 
+  const handleRegenerateImage = async () => {
+      if (!analysis) return;
+      const promptToUse = analysis.imagePrompt || analysis.title || dreamText.substring(0, 50);
+      
+      // Geçici bir "yükleniyor" durumu, ancak ana status'ü bozmadan
+      // Basitlik için UI'da bir loading spinner göstereceğiz
+      const imgPlaceholder = document.getElementById('image-placeholder');
+      if (imgPlaceholder) imgPlaceholder.style.opacity = '0.5';
+
+      try {
+          const img = await generateDreamImage(promptToUse);
+          if (img) setImageUrl(img);
+          else alert("Görsel yine oluşturulamadı. Lütfen daha sonra tekrar deneyin.");
+      } catch (e) {
+          alert("Hata: Görsel oluşturulamadı.");
+      } finally {
+          if (imgPlaceholder) imgPlaceholder.style.opacity = '1';
+      }
+  };
+
   const processDream = async () => {
     if (!dreamText.trim()) return;
     
@@ -377,18 +397,26 @@ const App: React.FC = () => {
         {(analysis || status === AppStatus.GENERATING_IMAGE || status === AppStatus.COMPLETE) && (
           <div ref={resultRef} className="space-y-8 animate-fade-in-up">
             
-            <div className="relative aspect-video md:aspect-[16/9] rounded-2xl overflow-hidden shadow-2xl border-4 border-opacity-20 border-white group">
+            <div id="image-placeholder" className="relative aspect-video md:aspect-[16/9] rounded-2xl overflow-hidden shadow-2xl border-4 border-opacity-20 border-white group transition-opacity duration-300">
               {imageUrl ? (
                 <img src={imageUrl} alt="Rüya Görseli" className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700" />
               ) : (
-                <div className="w-full h-full bg-black/20 flex flex-col items-center justify-center backdrop-blur-sm">
+                <div className="w-full h-full bg-black/20 flex flex-col items-center justify-center backdrop-blur-sm p-4 text-center">
                    <ImageIcon className="w-16 h-16 opacity-50 animate-bounce" />
-                   <p className="mt-4 font-serif italic">
+                   <p className="mt-4 font-serif italic mb-4">
                      {status === AppStatus.GENERATING_IMAGE ? "Rüyanız görselleştiriliyor..." : "Görsel oluşturulamadı (İsteğe bağlı)."}
                    </p>
+                   {status === AppStatus.COMPLETE && !imageUrl && (
+                       <button 
+                         onClick={handleRegenerateImage}
+                         className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-full text-sm font-bold backdrop-blur-md transition-colors"
+                       >
+                         Tekrar Dene
+                       </button>
+                   )}
                 </div>
               )}
-              {analysis?.title && (
+              {analysis?.title && imageUrl && (
                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-6 pt-20">
                     <h2 className="text-3xl font-serif text-white font-bold">{analysis.title}</h2>
                  </div>
