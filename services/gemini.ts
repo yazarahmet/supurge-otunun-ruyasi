@@ -4,7 +4,7 @@ import { DreamAnalysis, AudioData } from "../types";
 // API Key initialization per guidelines
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Güvenlik Ayarları: İçerik filtrelerine takılmamak için
+// Güvenlik Ayarları: İçerik filtrelerine takılmamak için (Sadece Metin Modelleri İçin)
 const SAFETY_SETTINGS = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
   { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -171,18 +171,23 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 // 3. Generate Image
 export const generateDreamImage = async (imagePrompt: string): Promise<string> => {
   // Prompt zaten İngilizce ve güvenli olarak analiz aşamasında üretildi.
-  // Stil ekleyelim, ancak daha net bir sanat tarzı seçelim.
   const finalPrompt = `${imagePrompt}, digital art, highly detailed, surrealism but clear, 8k resolution.`;
 
   console.log("Generating image with prompt:", finalPrompt);
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
+        // ÖNEMLİ: Görsel modeline (gemini-2.5-flash-image) safetySettings GÖNDERME.
+        // Bazı platformlarda metin tabanlı güvenlik ayarları görsel modelinde "Invalid Argument" hatası verebilir.
+        // Ayrıca aspectRatio'yu 16:9 olarak ayarla.
         const response = await withTimeout(ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: { parts: [{ text: finalPrompt }] },
             config: {
-                safetySettings: SAFETY_SETTINGS
+                // safetySettings: [], // Bilerek boş bırakıldı veya gönderilmedi.
+                imageConfig: {
+                    aspectRatio: "16:9"
+                }
             }
         }), 45000);
 
@@ -252,7 +257,7 @@ export const generateDreamSpeech = async (textChunk: string): Promise<AudioData>
 export const askKeywordQuestion = async (
   dreamText: string, 
   interpretation: string, 
-  question: string,
+  question: string, 
   history: {role: string, parts: {text: string}[]}[]
 ): Promise<string> => {
   
