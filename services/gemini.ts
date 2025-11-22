@@ -116,11 +116,13 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
   try {
     const response = await withTimeout(ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Aşağıdaki rüyayı yorumla. Yorumun derinlikli, mistik ve rehberlik edici olsun.
-        
+        contents: `Aşağıdaki rüyayı yorumla. Yorumun psikolojik tabanlı, gerçekçi ve güncel hayatla ilişkili olsun.
+
         ÖNEMLİ: 
-        1. Kullanıcıya detaylı bir analiz sun. Metin uzunluğu 2500 karaktere kadar çıkabilir. Edebi bir dil kullan.
-        2. Ayrıca, bu rüyayı görselleştirmek için bir yapay zeka resim oluşturucusuna (AI Image Generator) verilecek İNGİLİZCE bir 'imagePrompt' oluştur. Bu prompt; soyut, sanatsal, sinematik ve GÜVENLİ (NSFW olmayan, şiddet içermeyen) olmalı.
+        1. Mistik, falcı veya masalsı bir dil KULLANMA. Bunun yerine psikolojik analiz, bilinçaltı sembolizmi ve gerçek hayat pratikleri üzerine odaklan.
+        2. Rüyayı gören kişinin günlük hayatındaki stresler, ilişkiler, kariyer veya duygusal durumuyla bağlantılar kur. Somut çıkarımlarda bulun.
+        3. Kullanıcıya detaylı bir analiz sun. Metin uzunluğu 2500 karaktere kadar çıkabilir. Samimi, yapıcı ve anlaşılır bir dil kullan.
+        4. Ayrıca, bu rüyayı görselleştirmek için bir yapay zeka resim oluşturucusuna (AI Image Generator) verilecek İNGİLİZCE bir 'imagePrompt' oluştur. Bu prompt; soyut, sanatsal ama net ve GÜVENLİ (NSFW olmayan, şiddet içermeyen) olmalı.
         
         Rüya: "${dreamText}"
         
@@ -128,7 +130,7 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
         {
         "sentiment": "positive" veya "negative" veya "neutral",
         "title": "Rüyaya kısa, Türkçe başlık",
-        "interpretation": "Detaylı rüya yorumu (Türkçe)",
+        "interpretation": "Gerçekçi ve psikolojik rüya yorumu (Türkçe)",
         "imagePrompt": "Cinematic digital art description in English..."
         }`,
         config: {
@@ -149,16 +151,16 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
     try {
         const data = extractJSON(rawText);
         if (!data.interpretation) data.interpretation = rawText;
-        if (!data.title) data.title = "Rüya Tabiri";
+        if (!data.title) data.title = "Rüya Analizi";
         if (!data.sentiment) data.sentiment = "neutral";
-        if (!data.imagePrompt) data.imagePrompt = "A mystical dreamscape, ethereal fog, surreal atmosphere, cinematic lighting, 8k resolution";
+        if (!data.imagePrompt) data.imagePrompt = "A surreal dreamscape, psychological depth, symbolic art, cinematic lighting, 8k resolution";
         return data as DreamAnalysis;
     } catch (jsonError) {
         return {
             sentiment: 'neutral',
-            title: 'Rüya Yorumu',
+            title: 'Rüya Analizi',
             interpretation: rawText.replace(/```json|```/g, '').trim(),
-            imagePrompt: "A mystical dreamscape, ethereal fog, surreal atmosphere, cinematic lighting, 8k resolution"
+            imagePrompt: "A surreal dreamscape, psychological depth, symbolic art, cinematic lighting, 8k resolution"
         };
     }
   } catch (error: any) {
@@ -169,8 +171,8 @@ export const analyzeDreamText = async (dreamText: string): Promise<DreamAnalysis
 // 3. Generate Image
 export const generateDreamImage = async (imagePrompt: string): Promise<string> => {
   // Prompt zaten İngilizce ve güvenli olarak analiz aşamasında üretildi.
-  // Yine de sonuna stil ekleyelim.
-  const finalPrompt = `${imagePrompt}, masterpiece, 8k resolution, highly detailed, digital art.`;
+  // Stil ekleyelim, ancak daha net bir sanat tarzı seçelim.
+  const finalPrompt = `${imagePrompt}, digital art, highly detailed, surrealism but clear, 8k resolution.`;
 
   console.log("Generating image with prompt:", finalPrompt);
 
@@ -254,7 +256,7 @@ export const askKeywordQuestion = async (
   history: {role: string, parts: {text: string}[]}[]
 ): Promise<string> => {
   
-  const systemInstruction = `Sen Süpürge Otu adında rüya tabircisisin. Rüya: "${dreamText}". Tabir: "${interpretation}". Soruya kısa ve mistik cevap ver.`;
+  const systemInstruction = `Sen Süpürge Otu adında rüya analistisin. Rüya: "${dreamText}". Analiz: "${interpretation}". Soruya kısa, gerçekçi, psikolojik analiz içeren ve çözüm odaklı cevap ver. Mistik konuşma.`;
 
   try {
     const chat = ai.chats.create({
@@ -264,7 +266,7 @@ export const askKeywordQuestion = async (
     });
 
     const response = await withTimeout(chat.sendMessage({ message: question }));
-    return response.text || "Ruhlar sessiz...";
+    return response.text || "Şu an cevap veremiyorum.";
   } catch (e) {
       return "Bir hata oluştu.";
   }
