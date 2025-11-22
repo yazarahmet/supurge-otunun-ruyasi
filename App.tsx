@@ -296,8 +296,8 @@ const App: React.FC = () => {
         <h1 className="text-4xl md:text-6xl font-serif font-bold tracking-widest drop-shadow-lg">
           Süpürge Otu'nun Rüyası
         </h1>
-        <p className="mt-2 text-lg opacity-80 font-light tracking-wide">
-          Bilinçaltı analizi ve gerçek hayat rehberliği
+        <p className="mt-3 text-lg md:text-xl font-mystic opacity-90 tracking-wide font-medium">
+          Bilinçaltının gizemli dünyasından hayatın gerçekliğine yolculuk
         </p>
       </header>
 
@@ -309,7 +309,7 @@ const App: React.FC = () => {
               value={dreamText}
               onChange={(e) => setDreamText(e.target.value)}
               placeholder="Rüyanı buraya yaz veya mikrofonu kullanarak anlat..."
-              className={`w-full h-40 p-4 rounded-xl bg-transparent border-2 focus:outline-none focus:ring-2 resize-none text-lg placeholder-opacity-50 ${
+              className={`w-full h-40 p-4 rounded-xl bg-transparent border-2 focus:outline-none focus:ring-2 resize-none text-lg placeholder-opacity-50 font-sans ${
                  analysis?.sentiment === 'positive' 
                  ? 'border-emerald-300/50 focus:border-emerald-500 placeholder-emerald-700/50' 
                  : 'border-stone-600/50 focus:border-purple-500 placeholder-stone-500'
@@ -326,13 +326,13 @@ const App: React.FC = () => {
                 }`}
               >
                 {status === AppStatus.RECORDING ? <StopIcon className="w-5 h-5" /> : <MicIcon className="w-5 h-5" />}
-                <span className="text-sm font-bold">{status === AppStatus.RECORDING ? 'Durdur' : 'Ses Kaydı'}</span>
+                <span className="text-sm font-bold font-sans">{status === AppStatus.RECORDING ? 'Durdur' : 'Ses Kaydı'}</span>
               </button>
 
               <button
                 onClick={processDream}
                 disabled={!dreamText || status === AppStatus.ANALYZING}
-                className={`flex items-center gap-2 px-8 py-3 rounded-full font-bold text-lg shadow-lg transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${getButtonStyle()}`}
+                className={`flex items-center gap-2 px-8 py-3 rounded-full font-bold text-lg shadow-lg transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-sans ${getButtonStyle()}`}
               >
                 {status === AppStatus.ANALYZING ? (
                   <>
@@ -351,7 +351,7 @@ const App: React.FC = () => {
         </div>
 
         {status === AppStatus.TRANSCRIBING && (
-          <div className="text-center py-4 animate-pulse">Ses metne dönüştürülüyor...</div>
+          <div className="text-center py-4 animate-pulse font-sans">Ses metne dönüştürülüyor...</div>
         )}
 
         {(analysis || status === AppStatus.COMPLETE) && (
@@ -363,7 +363,7 @@ const App: React.FC = () => {
                 {/* Title Section */}
                 <div className="mb-6 text-center border-b border-current border-opacity-20 pb-4">
                    <h2 className="text-3xl font-serif font-bold mb-1">{analysis.title}</h2>
-                   <div className="text-sm opacity-70 uppercase tracking-widest">Rüya Analizi</div>
+                   <div className="text-sm opacity-70 uppercase tracking-widest font-sans">Rüya Analizi</div>
                 </div>
 
                 <div className="flex justify-between items-start mb-4">
@@ -389,7 +389,8 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 </div>
-                <p className="text-lg leading-relaxed font-serif text-justify whitespace-pre-wrap">
+                {/* Updated Font Family for Interpretation */}
+                <p className="text-xl leading-loose font-mystic text-justify whitespace-pre-wrap font-medium">
                   {analysis.interpretation}
                 </p>
               </div>
@@ -398,15 +399,15 @@ const App: React.FC = () => {
             {analysis && (
               <div className={`backdrop-blur-md rounded-3xl p-6 shadow-xl border mt-8 ${getCardStyle()}`}>
                 <div className="border-b border-current border-opacity-20 pb-4 mb-4">
-                  <h3 className="text-lg font-bold flex items-center gap-2">
+                  <h3 className="text-lg font-bold flex items-center gap-2 font-sans">
                     <span className="text-2xl">🧠</span> Sembol Analizi Sohbeti
                   </h3>
-                  <p className="text-sm opacity-70 mt-1">
+                  <p className="text-sm opacity-70 mt-1 font-sans">
                     Rüyanızdaki belirli sembolleri (örn: "yılan", "uçmak") sorarak bilinçaltı anlamını öğrenin.
                   </p>
                 </div>
                 
-                <div className="h-64 overflow-y-auto mb-4 space-y-4 pr-2 scroll-smooth">
+                <div className="h-64 overflow-y-auto mb-4 space-y-4 pr-2 scroll-smooth font-sans">
                   {chatMessages.length === 0 && (
                      <div className="text-center opacity-50 italic mt-20">
                         "Rüyamda gördüğüm anahtar günlük hayatımda neyi simgeliyor?"
@@ -426,7 +427,7 @@ const App: React.FC = () => {
                   <div ref={chatEndRef} />
                 </div>
 
-                <form onSubmit={handleChatSubmit} className="relative">
+                <form onSubmit={handleChatSubmit} className="relative font-sans">
                   <input
                     type="text"
                     value={currentQuestion}

@@ -93,6 +93,7 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
   });
 
   const mimeType = audioBlob.type || 'audio/webm';
+  const PROMPT_TEXT = "Lütfen bu ses dosyasını tam olarak metne dök. Sadece söylenenleri yaz.";
 
   try {
     const response = await withTimeout(ai.models.generateContent({
@@ -100,11 +101,17 @@ export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
         contents: {
         parts: [
             { inlineData: { mimeType: mimeType, data: base64Audio } },
-            { text: "Lütfen bu ses dosyasını tam olarak metne dök. Sadece söylenenleri yaz." }
+            { text: PROMPT_TEXT }
         ]
         }
     }));
-    return response.text || "";
+    
+    let text = response.text || "";
+    
+    // Model bazen promptu da cevaba ekleyebiliyor, bunu temizleyelim.
+    text = text.replace(PROMPT_TEXT, "").trim();
+    
+    return text;
   } catch (error: any) {
     console.error("Transcribe Error:", error);
     throw new Error(`Ses işlenirken hata: ${error.message || error}`);
