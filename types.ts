@@ -2,7 +2,6 @@ export interface DreamAnalysis {
   sentiment: 'positive' | 'negative' | 'neutral';
   interpretation: string;
   title: string;
-  imagePrompt: string; // Görsel oluşturucu için özel İngilizce prompt
 }
 
 export interface ChatMessage {
@@ -20,7 +19,6 @@ export enum AppStatus {
   RECORDING = 'RECORDING',
   TRANSCRIBING = 'TRANSCRIBING',
   ANALYZING = 'ANALYZING',
-  GENERATING_IMAGE = 'GENERATING_IMAGE',
   COMPLETE = 'COMPLETE',
   ERROR = 'ERROR'
 }
